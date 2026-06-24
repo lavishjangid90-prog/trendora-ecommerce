@@ -1,0 +1,122 @@
+[
+  {
+    "_id": "cod_903352",
+    "amount": 1818200,
+    "currency": "INR",
+    "paymentMode": "cod",
+    "status": "placed",
+    "address": {
+      "fullName": "lavish jangid",
+      "phone": "9461300991",
+      "pincode": "302033",
+      "city": "jaipur",
+      "state": "rajasthan",
+      "addressLine": "c87 ganesh nagar sheoupur"
+    },
+    "items": [
+      {
+        "product": {
+          "_id": "p1",
+          "name": "Oversized Streetwear T-Shirt",
+          "price": 899,
+          "originalPrice": 1499,
+          "discount": 40,
+          "category": "Streetwear",
+          "image": "https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?auto=format&fit=crop&q=80&w=800",
+          "rating": 4.8,
+          "reviews": 124,
+          "sizes": [
+            "S",
+            "M",
+            "L",
+            "XL"
+          ],
+          "colors": [
+            "Black",
+            "White"
+          ],
+          "description": "Premium oversized drop-shoulder t-shirt perfect for streetwear. Made from 100% heavy cotton.",
+          "isTrending": true
+        },
+        "quantity": 13,
+        "selectedSize": "S",
+        "selectedColor": "Black"
+      },
+      {
+        "product": {
+          "_id": "p3",
+          "name": "Women's Floral Summer Dress",
+          "price": 1299,
+          "originalPrice": 2499,
+          "discount": 48,
+          "category": "Women's Fashion",
+          "image": "https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?auto=format&fit=crop&q=80&w=800",
+          "rating": 4.9,
+          "reviews": 210,
+          "sizes": [
+            "XS",
+            "S",
+            "M",
+            "L"
+          ],
+          "colors": [
+            "Floral Red",
+            "Floral Blue"
+          ],
+          "description": "Lightweight and breathable. Perfect for summer outgoings.",
+          "isTrending": false
+        },
+        "quantity": 5,
+        "selectedSize": "XS",
+        "selectedColor": "Floral Red"
+      }
+    ],
+    "createdAt": "2026-06-21T08:18:14.541Z"
+  },
+  {
+    "_id": "ord_mock_778529",
+    "amount": 99800,
+    "currency": "INR",
+    "paymentMode": "mock",
+    "status": "placed",
+    "address": {
+      "fullName": "lavish jangid",
+      "phone": "9461300991",
+      "pincode": "302033",
+      "city": "jaipur",
+      "state": "rajasthan",
+      "addressLine": "c 87 ganesh nagar sheoupur sanganer jaipur"
+    },
+    "items": [
+      {
+        "product": {
+          "_id": "p1",
+          "name": "Oversized Streetwear T-Shirt",
+          "price": 899,
+          "originalPrice": 1499,
+          "discount": 40,
+          "category": "Streetwear",
+          "image": "https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?auto=format&fit=crop&q=80&w=800",
+          "rating": 4.8,
+          "reviews": 124,
+          "sizes": [
+            "S",
+            "M",
+            "L",
+            "XL"
+          ],
+          "colors": [
+            "Black",
+            "White"
+          ],
+          "description": "Premium oversized drop-shoulder t-shirt perfect for streetwear. Made from 100% heavy cotton.",
+          "isTrending": true
+        },
+        "quantity": 1,
+        "selectedSize": "S",
+        "selectedColor": "Black"
+      }
+    ],
+    "createdAt": "2026-06-21T08:16:05.510Z"
+  }
+]

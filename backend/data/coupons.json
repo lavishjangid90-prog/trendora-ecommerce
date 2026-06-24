@@ -1,0 +1,12 @@
+[
+  {
+    "_id": "c1782221468353",
+    "code": "00001",
+    "discountType": "percent",
+    "discountValue": 79,
+    "expiresAt": "2026-06-27",
+    "active": true,
+    "usageLimit": 100,
+    "used": 0
+  }
+]
