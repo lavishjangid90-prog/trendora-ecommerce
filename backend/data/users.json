@@ -1,0 +1,35 @@
+[
+  {
+    "_id": "u_0a219c2a-48cb-4352-a0d6-b46f0c981b2e",
+    "name": "lokesh verma",
+    "email": "shyampropertiessolution@gmail.com",
+    "passwordHash": "$2b$10$5lHNvHNqhA4NjrHPxBZlUedvPbDjtTxEhJHMLJTpGL/W.pukmpTW6",
+    "role": "user",
+    "blocked": false,
+    "createdAt": "2026-06-24T09:19:39.836Z",
+    "orders": 0,
+    "spent": 0
+  },
+  {
+    "_id": "u_f1e654bb-e04c-453c-bff9-7cf3a3571470",
+    "name": "lavish jangid",
+    "email": "admin@trendora.local",
+    "passwordHash": "$2b$10$extSv/kBhcnutIIzh.FIX.rZsywYXO7S11xB2LPpTVRVPwGh2XCp6",
+    "role": "user",
+    "blocked": false,
+    "createdAt": "2026-06-23T14:21:04.496Z",
+    "orders": 0,
+    "spent": 0
+  },
+  {
+    "_id": "u_demo_1",
+    "name": "Lavish Vlogs",
+    "email": "lavishvlogs70@gmail.com",
+    "passwordHash": "$2b$10$uBgGf4TlTZqBRZc7AN5l1.iMehx48t5aW5ijYDtHIoIZEZOgRA.eK",
+    "role": "admin",
+    "blocked": false,
+    "createdAt": "2026-06-23T14:18:50.407Z",
+    "orders": 2,
+    "spent": 19180
+  }
+]

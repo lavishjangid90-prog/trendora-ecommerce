@@ -1,0 +1,267 @@
+[
+  {
+    "_id": "p1782393637181",
+    "code": "GIR-422212",
+    "sku": "GIR-422212",
+    "name": "Sassafras Girls Black Tencel Crop Oversized Shirt / Black",
+    "price": 199,
+    "originalPrice": 500,
+    "discount": 60,
+    "category": "girls oversized top",
+    "image": "/uploads/ff3bb631-2e41-4db1-ae3a-fbcc0a728530.jpg",
+    "images": [
+      "/uploads/ff3bb631-2e41-4db1-ae3a-fbcc0a728530.jpg"
+    ],
+    "rating": 4.5,
+    "reviews": 0,
+    "sizes": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "colors": [
+      "Black",
+      "White"
+    ],
+    "costPrice": 0,
+    "stock": 25,
+    "lowStockThreshold": 5,
+    "variants": [
+      "Regular Fit",
+      "Oversized"
+    ],
+    "keywords": [
+      "Sassafras Girls Black Tencel Crop Oversized Shirt / Black"
+    ],
+    "description": "Sassafras Girls Black Tencel Crop Oversized Shirt Style Top 8-9 YRS / Black",
+    "seoTitle": "Sassafras Girls Black Tencel Crop Oversized Shirt Style Top 8-9 YRS / Black",
+    "seoDescription": "Sassafras Girls Black Tencel Crop Oversized Shirt Style Top 8-9 YRS / Black",
+    "isTrending": true
+  },
+  {
+    "_id": "p1782374189291",
+    "code": "STR-522182",
+    "sku": "STR-522182",
+    "name": "boys regular fit formal shoes",
+    "price": 502,
+    "originalPrice": 800,
+    "discount": 37,
+    "category": "Streetwear",
+    "image": "/uploads/daa13058-9676-4c91-8313-093db4c66409.jpg",
+    "images": [
+      "/uploads/daa13058-9676-4c91-8313-093db4c66409.jpg"
+    ],
+    "rating": 4.5,
+    "reviews": 0,
+    "sizes": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "colors": [
+      "Black",
+      "White"
+    ],
+    "costPrice": 0,
+    "stock": 25,
+    "lowStockThreshold": 5,
+    "variants": [
+      "Regular Fit",
+      "Oversized"
+    ],
+    "keywords": [
+      "formal shoes;white shoes;boys shoes"
+    ],
+    "description": "a very comfortable formal shoes for boys",
+    "seoTitle": "formal shoes",
+    "seoDescription": "a very comfortable formal shoes for boys",
+    "isTrending": true
+  },
+  {
+    "_id": "p1782292448177",
+    "code": "STR-982479",
+    "sku": "STR-982479",
+    "name": "mens gogle",
+    "price": 100,
+    "originalPrice": 198,
+    "discount": 49,
+    "category": "Streetwear",
+    "image": "/uploads/b1716089-d01a-4387-98ee-65ca3dac6381.jpg",
+    "images": [
+      "/uploads/b1716089-d01a-4387-98ee-65ca3dac6381.jpg"
+    ],
+    "rating": 4.5,
+    "reviews": 0,
+    "sizes": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "colors": [
+      "Black",
+      "White"
+    ],
+    "costPrice": 48,
+    "stock": 25,
+    "lowStockThreshold": 5,
+    "variants": [
+      "Regular Fit",
+      "Oversized"
+    ],
+    "keywords": [
+      "boys trending gogles"
+    ],
+    "description": "regular fit boys trending gogles",
+    "seoTitle": "",
+    "seoDescription": "",
+    "isTrending": true
+  },
+  {
+    "_id": "p1782289918061",
+    "code": "GIR-376346",
+    "name": "girls gogles",
+    "price": 200,
+    "originalPrice": 300,
+    "discount": 33,
+    "category": "girls gogle",
+    "image": "/uploads/8ef5683f-8610-4bb1-9329-e2ba00a31e9d.jpg",
+    "images": [
+      "/uploads/8ef5683f-8610-4bb1-9329-e2ba00a31e9d.jpg"
+    ],
+    "rating": 4.5,
+    "reviews": 0,
+    "sizes": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "colors": [
+      "Black",
+      "White"
+    ],
+    "stock": 25,
+    "variants": [
+      "Regular Fit",
+      "Oversized"
+    ],
+    "description": "a stylish girls gogle",
+    "isTrending": true,
+    "sku": "GIR-376346",
+    "keywords": [],
+    "lowStockThreshold": 5,
+    "costPrice": 0
+  },
+  {
+    "_id": "p1782225634091",
+    "code": "FOR-223519",
+    "name": "formal dress",
+    "price": 900,
+    "originalPrice": 1000,
+    "discount": 10,
+    "category": "formal dress",
+    "image": "/uploads/7b35e000-a2e9-4d54-9475-cf706b63e0fb.jpg",
+    "images": [
+      "/uploads/775c9d8c-67f6-417e-862c-8008b73a7824.jpg",
+      "/uploads/7b35e000-a2e9-4d54-9475-cf706b63e0fb.jpg"
+    ],
+    "rating": 4.5,
+    "reviews": 0,
+    "sizes": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "colors": [
+      "Black",
+      "White"
+    ],
+    "stock": 25,
+    "variants": [
+      "Regular Fit",
+      "Oversized"
+    ],
+    "description": "black and white formal dress",
+    "isTrending": true,
+    "sku": "FOR-223519",
+    "keywords": [],
+    "lowStockThreshold": 5,
+    "costPrice": 0
+  },
+  {
+    "_id": "p1782035163434",
+    "name": "baggy jeans ",
+    "price": 600,
+    "originalPrice": 300,
+    "discount": 0,
+    "category": "baggy paint",
+    "image": "/uploads/d0fb1ab6-0c89-43df-b18b-f0e4598d1fa1.webp",
+    "images": [
+      "/uploads/d0fb1ab6-0c89-43df-b18b-f0e4598d1fa1.webp"
+    ],
+    "rating": 4.5,
+    "reviews": 0,
+    "sizes": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "colors": [
+      "Black",
+      "White"
+    ],
+    "stock": 3,
+    "variants": [
+      "Regular Fit",
+      "Oversized"
+    ],
+    "description": "it is vey usefull producct daily wear product 100 percent cotton \n",
+    "isTrending": true,
+    "code": "BAG-264922",
+    "sku": "BAG-264922",
+    "keywords": [],
+    "lowStockThreshold": 5,
+    "costPrice": 0
+  },
+  {
+    "_id": "p1782034360817",
+    "name": "oversize t-shirt",
+    "price": 500,
+    "originalPrice": 550,
+    "discount": 9,
+    "category": "Streetwear",
+    "image": "/uploads/454de5a4-24ca-4e6a-a4bf-cc57d8da28f0.jpg",
+    "images": [
+      "/uploads/454de5a4-24ca-4e6a-a4bf-cc57d8da28f0.jpg"
+    ],
+    "rating": 4.5,
+    "reviews": 0,
+    "sizes": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "colors": [
+      "Black",
+      "White"
+    ],
+    "stock": 21,
+    "variants": [
+      "Regular Fit",
+      "Oversized"
+    ],
+    "description": "this product are very useful products day by day 100 percent cotton",
+    "isTrending": true,
+    "code": "STR-845617",
+    "sku": "STR-845617",
+    "keywords": [],
+    "lowStockThreshold": 5,
+    "costPrice": 0
+  }
+]

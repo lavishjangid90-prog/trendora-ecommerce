@@ -1,0 +1,6 @@
+{
+  "name": "TRENDORA",
+  "description": "A premium fashion ecommerce app with full-stack functionality, including product browsing, cart, mock payments, and a responsive mobile-first UI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
