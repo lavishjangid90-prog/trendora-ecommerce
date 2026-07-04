@@ -3,6 +3,7 @@ import { Search, SlidersHorizontal } from 'lucide-react';
 import { ProductCard } from '../components/ProductCard';
 import { Product } from '../types';
 import { usePageMeta } from '../lib/usePageMeta';
+import { apiFetch } from '../config';
 
 export function SearchPage() {
   const [query, setQuery] = useState('');
@@ -18,8 +19,7 @@ export function SearchPage() {
     const controller = new AbortController();
     setLoading(true);
 
-    fetch(`/api/products?search=${encodeURIComponent(query)}`, { signal: controller.signal })
-      .then((res) => res.json())
+    apiFetch<Product[]>(`/api/products?search=${encodeURIComponent(query)}`, { signal: controller.signal })
       .then((data) => {
         setProducts(data);
         setLoading(false);

@@ -603,8 +603,25 @@ async function startServer() {
   const app = express();
   const PORT: number = Number(process.env.PORT) || 3000;
   const HOST = process.env.HOST || "0.0.0.0";
+  const allowedOrigins = [
+    process.env.FRONTEND_URL,
+    process.env.APP_URL,
+    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "",
+  ].filter(Boolean);
+
   // Middleware
-  app.use(cors());
+  app.use(cors({
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(null, false);
+    },
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization", "x-file-name", "x-admin-key"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  }));
   app.use(express.json());
   app.use("/uploads", express.static(uploadsDir));
 
@@ -1791,7 +1808,7 @@ async function startServer() {
 
   const listen = (port: number) => {
     const server = app.listen(port, HOST, () => {
-      console.log(`Server running on http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${port}`);
+      console.log(`Server listening on ${HOST}:${port}`);
     });
 
     server.once("error", (err: NodeJS.ErrnoException) => {

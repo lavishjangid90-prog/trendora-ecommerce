@@ -1,4 +1,4 @@
-import { API_URL } from "@/config";
+import { apiFetch, assetUrl } from "@/config";
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Heart, Star, ShoppingBag, Share2, Truck, Ruler } from 'lucide-react';
@@ -26,8 +26,9 @@ export function ProductDetailsPage() {
   });
 
   useEffect(() => {
-    fetch(`${API_URL}/api/products/${id}`)
-      .then(res => res.json())
+    if (!id) return;
+
+    apiFetch<Product>(`/api/products/${id}`)
       .then(data => {
         setProduct(data);
         if (data.sizes?.length) setSelectedSize(data.sizes[0]);
@@ -94,7 +95,7 @@ export function ProductDetailsPage() {
       <div className="mx-auto grid w-full max-w-7xl lg:min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(420px,520px)] lg:gap-8 lg:px-6 lg:pt-20">
         {/* Product Image Stage */}
         <div className="relative aspect-[4/5] w-full bg-gray-100 lg:sticky lg:top-20 lg:aspect-[5/6] lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden lg:rounded-3xl">
-          <img src={product.image} alt={product.name} className="h-full w-full object-cover" />
+          <img src={assetUrl(product.image)} alt={product.name} className="h-full w-full object-cover" />
         </div>
 
         {/* Product Info */}

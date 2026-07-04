@@ -4,6 +4,7 @@ import { ChevronLeft, CreditCard, Home, ShieldCheck, Truck } from 'lucide-react'
 import { CheckoutOrder, DeliveryAddress } from '../types';
 import { useStore } from '../store/useStore';
 import { usePageMeta } from '../lib/usePageMeta';
+import { apiFetch } from '../config';
 
 const emptyAddress: DeliveryAddress = {
   fullName: '',
@@ -133,7 +134,7 @@ export function CheckoutPage() {
   const recordPaymentFailure = async (orderId: string, reason: string) => {
     try {
       console.warn('[Razorpay] Recording payment failure:', { orderId, reason });
-      await fetch(`/api/orders/${orderId}/payment-failed`, {
+      await apiFetch<{ success: boolean }>(`/api/orders/${orderId}/payment-failed`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -194,7 +195,7 @@ export function CheckoutPage() {
         setMessage('Payment verify ho raha hai...');
 
         try {
-          const verifyResponse = await fetch('/api/orders/verify-payment', {
+          const verifyResult = await apiFetch<CheckoutOrder>('/api/orders/verify-payment', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -202,11 +203,6 @@ export function CheckoutPage() {
             },
             body: JSON.stringify(paymentResponse),
           });
-          const verifyResult = await verifyResponse.json();
-
-          if (!verifyResponse.ok) {
-            throw new Error(verifyResult.message || 'Payment verification failed.');
-          }
 
           console.log('[Razorpay] Payment verified by backend:', verifyResult);
           clearCart();
@@ -264,7 +260,7 @@ export function CheckoutPage() {
 
     try {
       console.log('[Checkout] Creating order:', { amount: grandTotal, paymentMethod, itemCount: cart.length });
-      const response = await fetch('/api/orders/create', {
+      const order = await apiFetch<CheckoutOrder>('/api/orders/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -273,21 +269,14 @@ export function CheckoutPage() {
         body: JSON.stringify({ amount: grandTotal, address, items: cart, paymentMode: paymentMethod }),
       });
 
-      const order: CheckoutOrder = await response.json();
       console.log('[Checkout] Order create response:', {
-        ok: response.ok,
+        ok: true,
         orderId: order.orderId,
         paymentMode: order.paymentMode,
         hasKey: Boolean(order.keyId),
         amount: order.amount,
         currency: order.currency,
       });
-
-      if (!response.ok) {
-        setMessage(order.message || 'Payment order create nahi ho paya.');
-        setPlacingOrder(false);
-        return;
-      }
 
       if (order.paymentMode === 'mock' || order.paymentMode === 'cod') {
         clearCart();

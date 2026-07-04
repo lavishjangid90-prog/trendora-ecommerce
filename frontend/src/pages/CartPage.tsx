@@ -4,6 +4,7 @@ import { ChevronLeft, Trash2, Minus, Plus, ShieldCheck } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { motion, AnimatePresence } from 'motion/react';
 import { usePageMeta } from '../lib/usePageMeta';
+import { assetUrl } from '../config';
 
 export function CartPage() {
   const navigate = useNavigate();
@@ -73,7 +74,7 @@ export function CartPage() {
                     exit={{ opacity: 0, scale: 0.9 }}
                     className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm sm:flex-row"
                   >
-                    <img src={item.product.image} className="h-48 w-full rounded-xl bg-gray-100 object-cover sm:h-32 sm:w-24" alt={item.product.name} />
+                    <img src={assetUrl(item.product.image)} className="h-48 w-full rounded-xl bg-gray-100 object-cover sm:h-32 sm:w-24" alt={item.product.name} />
 
                     <div className="flex flex-col flex-1 py-1">
                       <div className="mb-1 flex items-start justify-between">

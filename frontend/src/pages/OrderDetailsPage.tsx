@@ -4,6 +4,7 @@ import { ArrowLeft, BadgeCheck, CircleDashed, Clock3, MapPin, Package, RefreshCc
 import { OrderHistoryItem } from '../types';
 import { useStore } from '../store/useStore';
 import { usePageMeta } from '../lib/usePageMeta';
+import { apiFetch, assetUrl } from '../config';
 
 export function OrderDetailsPage() {
   const { id } = useParams();
@@ -31,11 +32,7 @@ export function OrderDetailsPage() {
       setLoading(true);
       setMessage('');
       try {
-        const response = await fetch(`/api/orders/${id}`, { headers: authHeaders });
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.message || 'Order load nahi ho paya.');
-        }
+        const data = await apiFetch<OrderHistoryItem>(`/api/orders/${id}`, { headers: authHeaders });
         setOrder(data);
       } catch (error) {
         setMessage(error instanceof Error ? error.message : 'Order load nahi ho paya.');
@@ -52,17 +49,13 @@ export function OrderDetailsPage() {
     setActionLoading(loadingKey);
     setMessage('');
     try {
-      const response = await fetch(`/api/orders/${id}/${endpoint}`, {
+      const data = await apiFetch<{ order: OrderHistoryItem }>(`/api/orders/${id}/${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...authHeaders,
         },
       });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || 'Action failed.');
-      }
       setOrder(data.order as OrderHistoryItem);
       setMessage(endpoint === 'cancel' ? 'Order cancelled successfully.' : 'Return request submitted.');
     } catch (error) {
@@ -198,7 +191,7 @@ export function OrderDetailsPage() {
             <div className="space-y-3">
               {order.items?.map((item, index) => (
                 <div key={`${item.product?._id || index}-${index}`} className="flex items-center gap-3 rounded-xl border border-gray-100 p-3">
-                  <img src={item.product?.image} alt={item.product?.name} className="h-16 w-16 rounded-xl object-cover" />
+                  <img src={assetUrl(item.product?.image)} alt={item.product?.name} className="h-16 w-16 rounded-xl object-cover" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-black text-gray-900">{item.product?.name}</p>
                     <p className="text-xs text-gray-500">

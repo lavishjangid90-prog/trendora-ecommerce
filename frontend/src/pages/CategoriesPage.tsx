@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { ProductCard } from '../components/ProductCard';
 import { Product } from '../types';
 import { usePageMeta } from '../lib/usePageMeta';
+import { apiFetch } from '../config';
 
 const CATEGORIES = ['Streetwear', 'T-Shirts', 'Sneakers', 'Jackets', 'Accessories', "Women's Fashion"];
 
@@ -17,8 +18,7 @@ export function CategoriesPage() {
   });
 
   useEffect(() => {
-    fetch(`/api/products?category=${encodeURIComponent(selectedCategory)}`)
-      .then((res) => res.json())
+    apiFetch<Product[]>(`/api/products?category=${encodeURIComponent(selectedCategory)}`)
       .then(setProducts)
       .catch((err) => console.error('Failed to load category', err));
   }, [selectedCategory]);

@@ -4,6 +4,7 @@ import { Product } from '../types';
 import { useStore } from '../store/useStore';
 import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
+import { assetUrl } from '../config';
 
 export function ProductCard({ product }: { product: Product }) {
   const toggleWishlist = useStore((state) => state.toggleWishlist);
@@ -20,7 +21,7 @@ export function ProductCard({ product }: { product: Product }) {
       <div className="relative aspect-[4/5] overflow-hidden rounded-2xl bg-fuchsia-50 shadow-sm ring-1 ring-pink-100/80">
         <Link to={`/product/${product._id}`}>
           <img 
-            src={product.image} 
+            src={assetUrl(product.image)}
             alt={product.name} 
             className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
             loading="lazy"

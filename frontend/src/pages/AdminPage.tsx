@@ -1,4 +1,6 @@
+import { apiFetch, assetUrl } from "../config";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   BarChart3,
   Boxes,
@@ -224,18 +226,13 @@ export function AdminPage() {
   const urgentNotificationCount = notifications.filter((item) => !item.readAt && (item.severity === 'warning' || item.severity === 'danger')).length;
 
   const adminFetch = useCallback(async <T,>(path: string, options: RequestInit = {}) => {
-    const response = await fetch(path, {
+    return apiFetch<T>(path, {
       ...options,
       headers: {
         ...authHeaders,
         ...(options.headers || {}),
       },
     });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.message || 'Admin request failed.');
-    }
-    return data as T;
   }, [authHeaders]);
 
   const loadAdminData = useCallback(async () => {
@@ -278,14 +275,10 @@ export function AdminPage() {
     setLoading(true);
     setMessage('');
     try {
-      const data = await fetch('/api/admin/login', {
+      const data = await apiFetch<{ token: string }>('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(login),
-      }).then(async (response) => {
-        const json = await response.json();
-        if (!response.ok) throw new Error(json.message || 'Login failed.');
-        return json as { token: string };
       });
       localStorage.setItem('trendora-admin-token', data.token);
       setToken(data.token);
@@ -389,7 +382,7 @@ export function AdminPage() {
     setUploadingImage(true);
     setMessage('');
     try {
-      const response = await fetch('/api/admin/uploads', {
+      const data = await apiFetch<{ url: string }>('/api/admin/uploads', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -398,8 +391,6 @@ export function AdminPage() {
         },
         body: file,
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Image upload nahi ho payi.');
 
       setProductForm((current) => ({
         ...current,
@@ -702,7 +693,7 @@ export function AdminPage() {
                       </label>
                       {productForm.image && (
                         <div className="mt-3 overflow-hidden rounded-xl border border-white bg-white">
-                          <img src={productForm.image} alt="Product preview" className="h-44 w-full object-cover" />
+                          <img src={assetUrl(productForm.image)} alt="Product preview" className="h-44 w-full object-cover" />
                         </div>
                       )}
                     </div>
@@ -736,7 +727,7 @@ export function AdminPage() {
                   <div className="space-y-3">
                     {products.map((product) => (
                       <div key={product._id} className="grid gap-3 rounded-2xl border border-gray-100 p-3 sm:grid-cols-[64px_1fr_auto]">
-                        <img src={product.image} alt={product.name} className="h-16 w-16 rounded-xl object-cover" />
+                        <img src={assetUrl(product.image)} alt={product.name} className="h-16 w-16 rounded-xl object-cover" />
                         <div className="min-w-0">
                           <p className="truncate font-black">{product.name}</p>
                           <p className="text-xs font-black text-pink-600">Code: {product.code} · SKU: {product.sku || product.code}</p>
@@ -908,7 +899,7 @@ export function AdminPage() {
                 <div className="space-y-3">
                   {banners.map((banner) => (
                     <div key={banner._id} className="grid gap-3 rounded-2xl border border-gray-100 p-3 sm:grid-cols-[96px_1fr_auto]">
-                      <img src={banner.image} alt={banner.title} className="h-20 w-24 rounded-xl object-cover" />
+                      <img src={assetUrl(banner.image)} alt={banner.title} className="h-20 w-24 rounded-xl object-cover" />
                       <div>
                         <p className="font-black">{banner.title}</p>
                         <p className="text-sm text-gray-500">{banner.subtitle || 'No subtitle'} · {banner.placement}</p>
@@ -1029,7 +1020,7 @@ export function AdminPage() {
   );
 }
 
-function AdminPanel({ title, icon: Icon, children }: { title: string; icon: typeof LayoutDashboard; children: React.ReactNode }) {
+function AdminPanel({ title, icon: Icon, children }: { title: string; icon: typeof LayoutDashboard; children: ReactNode }) {
   return (
     <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
       <div className="mb-4 flex items-center gap-2 font-black">
@@ -1057,7 +1048,7 @@ function Select({ value, onChange, options }: { value: string; onChange: (value:
   );
 }
 
-function IconButton({ label, onClick, children, danger }: { label: string; onClick: () => void; children: React.ReactNode; danger?: boolean }) {
+function IconButton({ label, onClick, children, danger }: { label: string; onClick: () => void; children: ReactNode; danger?: boolean }) {
   return (
     <button title={label} aria-label={label} onClick={onClick} className={`flex h-10 w-10 items-center justify-center rounded-full ${danger ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-800'}`}>
       {children}

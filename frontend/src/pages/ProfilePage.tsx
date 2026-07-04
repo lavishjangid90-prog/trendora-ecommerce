@@ -4,6 +4,7 @@ import { ChevronRight, CreditCard, LogOut, MapPin, Package, ShieldCheck, User, C
 import { OrderHistoryItem, User as AppUser } from '../types';
 import { useStore } from '../store/useStore';
 import { usePageMeta } from '../lib/usePageMeta';
+import { apiFetch, assetUrl } from '../config';
 
 type AuthMode = 'login' | 'register';
 
@@ -42,17 +43,10 @@ export function ProfilePage() {
 
     setMessage('');
     try {
-      const [meResponse, ordersResponse] = await Promise.all([
-        fetch('/api/auth/me', { headers: authHeaders }),
-        fetch('/api/orders/me', { headers: authHeaders }),
+      const [meData, orderData] = await Promise.all([
+        apiFetch<{ user: AppUser }>('/api/auth/me', { headers: authHeaders }),
+        apiFetch<OrderHistoryItem[]>('/api/orders/me', { headers: authHeaders }),
       ]);
-
-      if (!meResponse.ok) {
-        throw new Error('Session expired');
-      }
-
-      const meData = await meResponse.json() as { user: AppUser };
-      const orderData = await ordersResponse.json() as OrderHistoryItem[];
 
       setAuthSession(meData.user, authToken);
       setOrders(orderData);
@@ -85,14 +79,13 @@ export function ProfilePage() {
         ? { name: credentials.name, email: credentials.email, password: credentials.password }
         : { email: credentials.email, password: credentials.password };
 
-      const response = await fetch(endpoint, {
+      const data = await apiFetch<{ token?: string; user?: AppUser; message?: string }>(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const data = await response.json() as { token?: string; user?: AppUser; message?: string };
 
-      if (!response.ok || !data.token || !data.user) {
+      if (!data.token || !data.user) {
         throw new Error(data.message || 'Authentication failed.');
       }
 
@@ -100,12 +93,10 @@ export function ProfilePage() {
       setCredentials(emptyCredentials);
       setMessage(mode === 'register' ? 'Account created successfully.' : 'Welcome back.');
       setMode('login');
-      const ordersResponse = await fetch('/api/orders/me', {
+      const orderData = await apiFetch<OrderHistoryItem[]>('/api/orders/me', {
         headers: { Authorization: `Bearer ${data.token}` },
       });
-      if (ordersResponse.ok) {
-        setOrders(await ordersResponse.json());
-      }
+      setOrders(orderData);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Login/register nahi ho paya.');
     } finally {
@@ -150,7 +141,7 @@ export function ProfilePage() {
               <div className="flex items-center gap-4">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-black text-white">
                   {user.avatar ? (
-                    <img src={user.avatar} alt={user.name} className="h-full w-full rounded-2xl object-cover" />
+                    <img src={assetUrl(user.avatar)} alt={user.name} className="h-full w-full rounded-2xl object-cover" />
                   ) : (
                     <CircleUserRound size={28} />
                   )}

@@ -1,4 +1,4 @@
-import { API_URL } from "@/config";
+import { apiFetch, assetUrl } from "@/config";
 import { useEffect, useState } from 'react';
 import { ProductCard } from '../components/ProductCard';
 import { Product } from '../types';
@@ -88,8 +88,8 @@ export function HomePage() {
 
   useEffect(() => {
     Promise.all([
-      fetch(`${API_URL}/api/products`).then((res) => res.json()),
-      fetch(`${API_URL}/api/banners`).then((res) => res.json()).catch(() => []),
+      apiFetch<Product[]>('/api/products'),
+      apiFetch<HomeBanner[]>('/api/banners').catch(() => []),
     ])
       .then(([productData, bannerData]) => {
         setProducts(productData);
@@ -116,7 +116,7 @@ export function HomePage() {
           <div className="absolute inset-0 z-10 bg-gradient-to-r from-fuchsia-950/80 via-fuchsia-800/40 to-pink-600/20"></div>
 
           <img
-            src={heroBanner.image}
+            src={assetUrl(heroBanner.image)}
             alt={heroBanner.title}
             className="absolute inset-0 h-full w-full object-cover opacity-80"
           />
