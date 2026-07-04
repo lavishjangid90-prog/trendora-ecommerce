@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/(.*)",
+      "destination": "https://trendora-ecommerce-e5zp.onrender.com/api/$1"
+    },
+    {
       "source": "/((?!robots.txt|sitemap.xml|assets/).*)",
       "destination": "/index.html"
     }

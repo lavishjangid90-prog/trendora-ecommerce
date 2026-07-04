@@ -1,15 +1,25 @@
-export const API_URL = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+const rawApiUrl = String(import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "").trim();
+
+export const API_URL = rawApiUrl.replace(/\/+$/, "");
 
 export function apiUrl(path: string) {
   if (/^https?:\/\//i.test(path)) return path;
   if (!API_URL) {
-    throw new Error("VITE_API_URL is required.");
+    throw new Error("VITE_API_URL is required. Set it to your Render backend URL in Vercel.");
   }
-  return `${API_URL}${path.startsWith("/") ? path : `/${path}`}`;
+
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${API_URL}${normalizedPath}`;
 }
 
 export async function apiFetch<T>(path: string, options: RequestInit = {}) {
-  const response = await fetch(apiUrl(path), options);
+  const response = await fetch(apiUrl(path), {
+    ...options,
+    headers: {
+      Accept: "application/json",
+      ...(options.headers || {}),
+    },
+  });
   const contentType = response.headers.get("content-type") || "";
   const isJson = contentType.includes("application/json");
   const data = isJson ? await response.json() : await response.text();
@@ -23,7 +33,8 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}) {
   }
 
   if (!isJson) {
-    throw new Error("API returned non-JSON response. Check VITE_API_URL.");
+    const preview = typeof data === "string" ? data.trim().slice(0, 80) : "";
+    throw new Error(`API returned non-JSON response. Check VITE_API_URL.${preview ? ` Response started with: ${preview}` : ""}`);
   }
 
   return data as T;

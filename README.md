@@ -53,6 +53,14 @@ Render will run:
 - Build command: `npm install && npm run build`
 - Start command: `npm start`
 
+### Vercel Frontend + Render Backend
+
+If the frontend is deployed separately on Vercel, add this environment variable in the Vercel project before building:
+
+`VITE_API_URL=https://your-render-backend.onrender.com`
+
+Without this value, browser requests to `/api/...` can be handled by the Vercel frontend rewrite and return the React HTML page instead of JSON, which causes errors such as `Unexpected token 'T' ... is not valid JSON`.
+
 ### Manual One-Service Settings
 
 If your host does not use `render.yaml`, use these settings:
