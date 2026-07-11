@@ -109,6 +109,11 @@ export function HomePage() {
     link: '/categories?category=Streetwear',
   };
 
+  const handleAiStylistClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    navigate('/ai-stylist');
+  };
+
   return (
     <div className="flex min-h-screen flex-col bg-white text-[#55205f]">
       <div className="w-full px-3 py-4 sm:px-4">
@@ -189,7 +194,7 @@ export function HomePage() {
             <span className="rounded-full bg-white/15 px-3 py-1 text-[10px] font-black uppercase tracking-widest">AI Powered</span>
             <h3 className="mt-4 text-2xl font-black leading-tight">Discover styles made for you.</h3>
             <p className="mt-2 text-sm font-medium text-white/85">Our AI stylist learns your taste and curates the perfect pieces.</p>
-            <button className="mt-5 rounded-full bg-white px-5 py-3 text-xs font-black text-[#55205f]">Try AI Stylist</button>
+            <button type="button" onClick={handleAiStylistClick} className="mt-5 rounded-full bg-white px-5 py-3 text-xs font-black text-[#55205f]">Try AI Stylist</button>
           </div>
         </div>
       </div>

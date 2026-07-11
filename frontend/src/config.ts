@@ -1,14 +1,13 @@
 const rawApiUrl = String(import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "").trim();
+const useRelativeApiInProduction = !import.meta.env.DEV;
 
-export const API_URL = rawApiUrl.replace(/\/+$/, "");
+export const API_URL = useRelativeApiInProduction ? "" : rawApiUrl.replace(/\/+$/, "");
 
 export function apiUrl(path: string) {
   if (/^https?:\/\//i.test(path)) return path;
-  if (!API_URL) {
-    throw new Error("VITE_API_URL is required. Set it to your Render backend URL in Vercel.");
-  }
 
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  if (!API_URL) return normalizedPath;
   return `${API_URL}${normalizedPath}`;
 }
 

@@ -217,6 +217,27 @@ type AdminNotification = {
   createdAt: string;
 };
 
+type AiAnalyticsRecord = {
+  _id: string;
+  createdAt: string;
+  source: "stylist";
+  mode?: "style" | "room";
+  gender?: string;
+  age?: number;
+  heightCm?: number;
+  weightKg?: number;
+  budget?: string;
+  preferredStyle?: string;
+  occasion?: string;
+  roomType?: string;
+  roomSize?: string;
+  existingColors?: string;
+  question?: string;
+  imageUrl: string;
+  productIds: string[];
+  analysis: string;
+};
+
 const products: Product[] = [...MOCK_PRODUCTS];
 const orders: OrderRecord[] = [];
 const users: AccountUser[] = [];
@@ -292,6 +313,179 @@ function getRequestUser(req: express.Request) {
   } catch {
     return null;
   }
+}
+
+function chooseRecommendedProducts(analysisText: string, contextText = "") {
+  const normalized = [analysisText, contextText].join(" ").toLowerCase();
+  const selection = new Set<string>();
+
+  const addMatches = (matcher: (product: Product) => boolean) => {
+    for (const product of products) {
+      if (selection.size >= 6) break;
+      if (matcher(product)) selection.add(product._id);
+    }
+  };
+
+  addMatches((product) =>
+    product.name.toLowerCase().split(/\s+/).some((word) => normalized.includes(word))
+  );
+
+  addMatches((product) =>
+    product.category.toLowerCase().split(/\s+/).some((word) => normalized.includes(word))
+  );
+
+  addMatches((product) =>
+    product.colors.some((color) => normalized.includes(color.toLowerCase()))
+  );
+
+  const categoryKeywords = Array.from(new Set(products.map((product) => product.category.toLowerCase())));
+  for (const category of categoryKeywords) {
+    if (selection.size >= 6) break;
+    if (normalized.includes(category)) {
+      addMatches((product) => product.category.toLowerCase() === category);
+    }
+  }
+
+  if (selection.size < 6) {
+    addMatches((product) => product.isTrending);
+  }
+  if (selection.size < 6) {
+    addMatches(() => true);
+  }
+
+  return products.filter((product) => selection.has(product._id)).slice(0, 6);
+}
+
+function buildStylistContext(query: express.Request["query"]) {
+  const details = [
+    query.gender ? `gender: ${query.gender}` : "",
+    query.age ? `age: ${query.age}` : "",
+    query.heightCm || query.height ? `height: ${query.heightCm || query.height} cm` : "",
+    query.weightKg || query.weight ? `weight: ${query.weightKg || query.weight} kg` : "",
+    query.budget ? `budget: ${query.budget}` : "",
+    query.preferredStyle || query.style ? `preferred style: ${query.preferredStyle || query.style}` : "",
+    query.occasion ? `occasion: ${query.occasion}` : "",
+  ].filter(Boolean);
+
+  return details.length ? details.join(", ") : "No extra customer preferences shared.";
+}
+
+function sanitizeAiText(value: unknown, fallback = "") {
+  return String(value || fallback).trim().slice(0, 600);
+}
+
+function normalizeAdvisorMode(value: unknown): "style" | "room" {
+  return String(value || "").toLowerCase() === "room" ? "room" : "style";
+}
+
+function buildAdvisorContext(input: Record<string, unknown>) {
+  const mode = normalizeAdvisorMode(input.mode);
+  const details = mode === "room"
+    ? [
+        input.roomType ? `room type: ${sanitizeAiText(input.roomType)}` : "",
+        input.roomSize ? `room size: ${sanitizeAiText(input.roomSize)}` : "",
+        input.existingColors ? `existing colors/materials: ${sanitizeAiText(input.existingColors)}` : "",
+        input.budget ? `budget: ${sanitizeAiText(input.budget)}` : "",
+        input.preferredStyle ? `decor style: ${sanitizeAiText(input.preferredStyle)}` : "",
+        input.question ? `customer question: ${sanitizeAiText(input.question)}` : "",
+      ].filter(Boolean)
+    : [
+        input.gender ? `gender: ${sanitizeAiText(input.gender)}` : "",
+        input.age ? `age: ${sanitizeAiText(input.age)}` : "",
+        input.heightCm ? `height: ${sanitizeAiText(input.heightCm)} cm` : "",
+        input.weightKg ? `weight: ${sanitizeAiText(input.weightKg)} kg` : "",
+        input.bodyType ? `fit preference/body note: ${sanitizeAiText(input.bodyType)}` : "",
+        input.budget ? `budget: ${sanitizeAiText(input.budget)}` : "",
+        input.preferredStyle ? `preferred style: ${sanitizeAiText(input.preferredStyle)}` : "",
+        input.occasion ? `occasion: ${sanitizeAiText(input.occasion)}` : "",
+        input.question ? `customer question: ${sanitizeAiText(input.question)}` : "",
+      ].filter(Boolean);
+
+  return details.length ? details.join(", ") : "No customer preferences shared.";
+}
+
+function buildLocalAdvisorAnalysis(mode: "style" | "room", context: string, recommendedProducts: Product[]) {
+  const productLine = recommendedProducts.length
+    ? recommendedProducts.map((product) => `${product.name} (${product.code})`).join(", ")
+    : "No matching catalog products are available yet.";
+
+  if (mode === "room") {
+    return [
+      `Room advisor summary: ${context}`,
+      "Use a clear focal point first, then add products that match the room's color temperature, storage needs, and walking space.",
+      `Trendora catalog matches: ${productLine}`,
+      "For a stronger room setup, add decor/home products in admin with keywords like lamp, cushion, wall art, rug, storage, mirror, curtain, table, and plant.",
+    ].join("\n\n");
+  }
+
+  return [
+    `Style advisor summary: ${context}`,
+    "Choose pieces that balance fit, occasion, color contrast, and comfort. Start with one main item, then add shoes or accessories that repeat one color from the look.",
+    `Trendora catalog matches: ${productLine}`,
+    "For best results, upload a full-length clear photo and mention the event, budget, and preferred fit.",
+  ].join("\n\n");
+}
+
+function parseImageDataUrl(value: unknown) {
+  const raw = String(value || "");
+  const match = raw.match(/^data:(image\/(?:jpeg|png|webp|gif));base64,([a-z0-9+/=]+)$/i);
+  if (!match) return null;
+  return {
+    mimeType: match[1].toLowerCase(),
+    buffer: Buffer.from(match[2], "base64"),
+  };
+}
+
+async function saveAdvisorImage(image: ReturnType<typeof parseImageDataUrl>) {
+  if (!image || !image.buffer.length) return "";
+
+  const mimeToExt: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+  };
+  const ext = mimeToExt[image.mimeType] || "jpg";
+  const filename = `${randomUUID()}.${ext}`;
+  await fs.mkdir(uploadsDir, { recursive: true });
+  await fs.writeFile(path.join(uploadsDir, filename), image.buffer);
+  return `/uploads/${filename}`;
+}
+
+function buildAiProductCatalog() {
+  return products.slice(0, 40).map((product) => ({
+    id: product._id,
+    code: product.code,
+    name: product.name,
+    category: product.category,
+    price: product.price,
+    colors: product.colors,
+    sizes: product.sizes,
+    keywords: product.keywords || [],
+    description: product.description,
+  }));
+}
+
+function extractRecommendedProducts(text: string) {
+  const normalized = String(text || "").toLowerCase();
+  const ids = new Set((normalized.match(/\bp[0-9]+\b/g) || []).map((id) => id.toLowerCase()));
+  const codes = new Set(
+    (normalized.match(/\b[a-z]{3}-[0-9]{6}\b/g) || []).map((code) => code.toUpperCase()),
+  );
+
+  return products
+    .filter((product) => ids.has(product._id.toLowerCase()) || codes.has(String(product.code || "").toUpperCase()))
+    .slice(0, 6);
+}
+
+function mergeRecommendedProducts(primary: Product[], fallback: Product[]) {
+  const merged = new Map<string, Product>();
+  [...primary, ...fallback].forEach((product) => {
+    if (merged.size < 6) {
+      merged.set(product._id, product);
+    }
+  });
+  return Array.from(merged.values());
 }
 
 function buildStockReservation(orderItems: OrderRecord["items"]) {
@@ -608,11 +802,12 @@ async function startServer() {
     process.env.APP_URL,
     process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "",
   ].filter(Boolean);
+  const isVercelOrigin = (origin: string) => /^https:\/\/.*\.vercel\.(app|dev)$/.test(origin);
 
   // Middleware
   app.use(cors({
     origin(origin, callback) {
-      if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+      if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin) || isVercelOrigin(origin)) {
         callback(null, true);
         return;
       }
@@ -622,7 +817,7 @@ async function startServer() {
     allowedHeaders: ["Content-Type", "Authorization", "x-file-name", "x-admin-key"],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   }));
-  app.use(express.json());
+  app.use(express.json({ limit: "12mb" }));
   app.use("/uploads", express.static(uploadsDir));
 
   const savedProducts = await readJsonFile<Product[]>(productsFile, []);
@@ -774,6 +969,218 @@ async function startServer() {
       res.status(404).json({ message: "Product not found" });
     }
   });
+
+  app.post("/api/recommendations/advisor", async (req, res) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const mode = normalizeAdvisorMode(body.mode);
+    const advisorContext = buildAdvisorContext(body);
+    const image = parseImageDataUrl(body.imageDataUrl);
+
+    if (String(body.imageDataUrl || "").trim() && !image) {
+      res.status(400).json({ message: "Image must be a jpeg, png, webp, or gif data URL." });
+      return;
+    }
+
+    let imageUrl = "";
+    try {
+      imageUrl = await saveAdvisorImage(image);
+    } catch (error) {
+      console.error("Advisor image save error:", error);
+      res.status(500).json({ message: "Image upload save nahi ho paya." });
+      return;
+    }
+
+    const baseMatches = chooseRecommendedProducts(
+      [
+        advisorContext,
+        mode === "room"
+          ? "home decor room lamp cushion storage mirror rug wall art accessory"
+          : "fashion outfit shoes accessories streetwear formal dress oversized",
+      ].join(" "),
+    );
+    let recommendedProducts = baseMatches;
+    let analysis = buildLocalAdvisorAnalysis(mode, advisorContext, recommendedProducts);
+
+    if (geminiApiKey) {
+      try {
+        const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+        const catalog = buildAiProductCatalog();
+        const prompt = mode === "room"
+          ? [
+              "You are Trendora's room styling and product advisor.",
+              "Analyze the customer's room photo if present and their room details.",
+              `Customer details: ${advisorContext}.`,
+              "Give practical room decoration advice: layout, color, lighting, storage, and which products would help.",
+              "Recommend up to 6 matching products only from this Trendora catalog when suitable.",
+              "If the catalog has no true home decor item, say which product types the seller should add and still recommend only relevant available accessories.",
+              "For each catalog recommendation, include exact product id or product code.",
+              "Return concise natural language text; do not use markdown.",
+              `Catalog JSON: ${JSON.stringify(catalog)}`,
+            ].join("\n\n")
+          : [
+              "You are Trendora's professional fashion stylist.",
+              "Analyze the customer's photo if present and their body/style details.",
+              `Customer details: ${advisorContext}.`,
+              "Suggest fits, colors, occasion styling, and up to 6 matching products only from this Trendora catalog.",
+              "For each catalog recommendation, include exact product id or product code.",
+              "Return concise natural language text; do not use markdown.",
+              `Catalog JSON: ${JSON.stringify(catalog)}`,
+            ].join("\n\n");
+
+        const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [{ text: prompt }];
+        if (image) {
+          parts.push({
+            inlineData: {
+              mimeType: image.mimeType,
+              data: image.buffer.toString("base64"),
+            },
+          });
+        }
+
+        const response = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: [{ role: "user", parts }],
+        });
+
+        const text = String(response.text || "").trim();
+        if (text) {
+          analysis = text;
+          recommendedProducts = mergeRecommendedProducts(
+            extractRecommendedProducts(text),
+            chooseRecommendedProducts(text, advisorContext),
+          );
+        }
+      } catch (error) {
+        console.error("AI advisor error:", error);
+      }
+    }
+
+    const analyticsRecord: AiAnalyticsRecord = {
+      _id: `aia_${Date.now()}_${randomUUID().slice(0, 8)}`,
+      source: "stylist",
+      mode,
+      createdAt: new Date().toISOString(),
+      gender: sanitizeAiText(body.gender) || undefined,
+      age: Number(body.age || 0) || undefined,
+      heightCm: Number(body.heightCm || 0) || undefined,
+      weightKg: Number(body.weightKg || 0) || undefined,
+      budget: sanitizeAiText(body.budget) || undefined,
+      preferredStyle: sanitizeAiText(body.preferredStyle) || undefined,
+      occasion: sanitizeAiText(body.occasion) || undefined,
+      roomType: sanitizeAiText(body.roomType) || undefined,
+      roomSize: sanitizeAiText(body.roomSize) || undefined,
+      existingColors: sanitizeAiText(body.existingColors) || undefined,
+      question: sanitizeAiText(body.question) || undefined,
+      imageUrl,
+      productIds: recommendedProducts.map((product) => product._id),
+      analysis,
+    };
+    aiAnalytics.unshift(analyticsRecord);
+    await persistAiAnalytics().catch((error) => console.error("Failed to persist AI analytics:", error));
+
+    res.json({
+      mode,
+      imageUrl,
+      analysis,
+      products: recommendedProducts,
+    });
+  });
+
+  app.post(
+    "/api/recommendations/style",
+    express.raw({ type: ["image/jpeg", "image/png", "image/webp", "image/gif"], limit: "10mb" }),
+    async (req, res) => {
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+        res.status(400).json({ message: "Image file is required." });
+        return;
+      }
+
+      const mimeToExt: Record<string, string> = {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+        "image/gif": "gif",
+      };
+      const requestMimeType = String(req.header("content-type") || "image/jpeg").split(";")[0].trim().toLowerCase();
+      const ext = mimeToExt[requestMimeType] || "jpg";
+      const filename = `${randomUUID()}.${ext}`;
+      await fs.mkdir(uploadsDir, { recursive: true });
+      await fs.writeFile(path.join(uploadsDir, filename), req.body);
+
+      const stylistContext = buildStylistContext(req.query);
+      let analysis = `Your photo is uploaded. Based on ${stylistContext}, here are style recommendations from the Trendora catalog.`;
+      let recommendedProducts = chooseRecommendedProducts(analysis, stylistContext);
+
+      if (geminiApiKey) {
+        try {
+          const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+          const catalog = buildAiProductCatalog();
+
+          const prompt = [
+            "You are Trendora's fashion stylist assistant.",
+            "Analyze the uploaded outfit photo and customer details.",
+            `Customer details: ${stylistContext}.`,
+            "Recommend up to 6 matching products only from this catalog.",
+            "For each recommendation, include the exact product id or product code so the store can match it.",
+            "You may suggest tops, bottoms, outerwear, shoes, and accessories when available.",
+            "Return concise natural language text; do not use markdown.",
+            `Catalog JSON: ${JSON.stringify(catalog)}`,
+          ].join(" \n\n");
+
+          const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  { text: prompt },
+                  {
+                    inlineData: {
+                      mimeType: requestMimeType,
+                      data: req.body.toString("base64"),
+                    },
+                  },
+                ],
+              },
+            ],
+          });
+
+          const text = String(response.text || "");
+          if (text.trim()) {
+            analysis = text.trim();
+            const extracted = extractRecommendedProducts(text);
+            recommendedProducts = mergeRecommendedProducts(extracted, chooseRecommendedProducts(text, stylistContext));
+          }
+        } catch (error) {
+          console.error("AI recommendation error:", error);
+        }
+      }
+
+      const analyticsRecord: AiAnalyticsRecord = {
+        _id: `aia_${Date.now()}_${randomUUID().slice(0, 8)}`,
+        source: "stylist",
+        createdAt: new Date().toISOString(),
+        gender: String(req.query.gender || "").trim() || undefined,
+        age: Number(req.query.age || 0) || undefined,
+        heightCm: Number(req.query.heightCm || req.query.height || 0) || undefined,
+        weightKg: Number(req.query.weightKg || req.query.weight || 0) || undefined,
+        budget: String(req.query.budget || "").trim() || undefined,
+        preferredStyle: String(req.query.preferredStyle || req.query.style || "").trim() || undefined,
+        occasion: String(req.query.occasion || "").trim() || undefined,
+        imageUrl: `/uploads/${filename}`,
+        productIds: recommendedProducts.map((product) => product._id),
+        analysis,
+      };
+      aiAnalytics.unshift(analyticsRecord);
+      await persistAiAnalytics().catch((error) => console.error("Failed to persist AI analytics:", error));
+
+      res.json({
+        imageUrl: `/uploads/${filename}`,
+        analysis,
+        products: recommendedProducts,
+      });
+    },
+  );
 
   app.post("/api/auth/register", async (req, res) => {
     const name = String(req.body.name || "").trim();
