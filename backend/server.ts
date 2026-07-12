@@ -244,6 +244,7 @@ const users: AccountUser[] = [];
 const coupons: Coupon[] = [];
 const banners: Banner[] = [];
 const notifications: AdminNotification[] = [];
+const aiAnalytics: AiAnalyticsRecord[] = [];
 const frontendRoot = process.env.FRONTEND_DIR
   ? path.resolve(process.env.FRONTEND_DIR)
   : path.resolve(backendDir, "../frontend");
@@ -258,6 +259,7 @@ const usersFile = path.join(dataDir, "users.json");
 const couponsFile = path.join(dataDir, "coupons.json");
 const bannersFile = path.join(dataDir, "banners.json");
 const notificationsFile = path.join(dataDir, "notifications.json");
+const aiAnalyticsFile = path.join(dataDir, "ai-analytics.json");
 const adminEmail = process.env.ADMIN_EMAIL || "admin@trendora.local";
 const adminPassword = process.env.ADMIN_PASSWORD || process.env.ADMIN_KEY || "trendora-admin";
 const jwtSecret = process.env.JWT_SECRET || "trendora-local-admin-secret";
@@ -606,6 +608,10 @@ async function persistUsers() {
   await writeJsonFile(usersFile, users);
 }
 
+async function persistAiAnalytics() {
+  await writeJsonFile(aiAnalyticsFile, aiAnalytics);
+}
+
 async function savePaymentRecord(record: Record<string, unknown>) {
   if (mongoose.connection.readyState !== 1) return;
 
@@ -826,6 +832,7 @@ async function startServer() {
   const savedCoupons = await readJsonFile<Coupon[]>(couponsFile, []);
   const savedBanners = await readJsonFile<Banner[]>(bannersFile, []);
   const savedNotifications = await readJsonFile<AdminNotification[]>(notificationsFile, []);
+  const savedAiAnalytics = await readJsonFile<AiAnalyticsRecord[]>(aiAnalyticsFile, []);
   products.splice(0, products.length, ...MOCK_PRODUCTS, ...savedProducts);
   products.forEach((product) => {
     product.code ||= generateProductCode(product.category);
@@ -835,6 +842,7 @@ async function startServer() {
     product.costPrice ??= 0;
   });
   orders.splice(0, orders.length, ...savedOrders);
+  aiAnalytics.splice(0, aiAnalytics.length, ...savedAiAnalytics);
   const fallbackUsers: AccountUser[] = [
     {
       _id: "u_demo_1",
