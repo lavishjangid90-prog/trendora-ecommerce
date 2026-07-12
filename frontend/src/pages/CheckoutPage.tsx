@@ -1,10 +1,10 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ChevronLeft, CreditCard, Home, ShieldCheck, Truck } from 'lucide-react';
-import { CheckoutOrder, DeliveryAddress } from '../types';
+import { CartItem, CheckoutOrder, DeliveryAddress } from '../types';
 import { useStore } from '../store/useStore';
 import { usePageMeta } from '../lib/usePageMeta';
-import { apiFetch } from '../config';
+import { apiFetch, assetUrl } from '../config';
 
 const emptyAddress: DeliveryAddress = {
   fullName: '',
@@ -16,6 +16,7 @@ const emptyAddress: DeliveryAddress = {
 };
 
 const RAZORPAY_CHECKOUT_SCRIPT = 'https://checkout.razorpay.com/v1/checkout.js';
+const BUY_NOW_STORAGE_KEY = 'trendora-buy-now-item';
 
 type RazorpaySuccessResponse = {
   razorpay_payment_id: string;
@@ -53,6 +54,18 @@ type RazorpayOptions = {
   theme: {
     color: string;
   };
+  config?: {
+    display?: {
+      blocks?: Record<string, {
+        name: string;
+        instruments: Array<{ method: string }>;
+      }>;
+      sequence?: string[];
+      preferences?: {
+        show_default_blocks?: boolean;
+      };
+    };
+  };
   handler: (response: RazorpaySuccessResponse) => void;
   modal: {
     ondismiss: () => void;
@@ -67,6 +80,27 @@ type RazorpayInstance = {
 declare global {
   interface Window {
     Razorpay?: new (options: RazorpayOptions) => RazorpayInstance;
+  }
+}
+
+type CheckoutLocationState = {
+  buyNowItem?: CartItem;
+};
+
+function readBuyNowItem(location: ReturnType<typeof useLocation>) {
+  const params = new URLSearchParams(location.search);
+  if (params.get('mode') !== 'buy-now') return null;
+
+  const stateItem = (location.state as CheckoutLocationState | null)?.buyNowItem;
+  if (stateItem?.product?._id) return stateItem;
+
+  try {
+    const stored = sessionStorage.getItem(BUY_NOW_STORAGE_KEY);
+    if (!stored) return null;
+    const parsed = JSON.parse(stored) as CartItem;
+    return parsed?.product?._id ? parsed : null;
+  } catch {
+    return null;
   }
 }
 
@@ -101,10 +135,13 @@ function loadRazorpayCheckout() {
 
 export function CheckoutPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const cart = useStore((state) => state.cart);
   const clearCart = useStore((state) => state.clearCart);
   const user = useStore((state) => state.user);
   const authToken = useStore((state) => state.authToken);
+  const [buyNowItem, setBuyNowItem] = useState<CartItem | null>(() => readBuyNowItem(location));
+  const [pendingRazorpayOrder, setPendingRazorpayOrder] = useState<CheckoutOrder | null>(null);
   const [address, setAddress] = useState(emptyAddress);
   const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'cod'>('razorpay');
   const [message, setMessage] = useState('');
@@ -121,11 +158,19 @@ export function CheckoutPage() {
     });
   }, []);
 
-  const itemTotal = cart.reduce((total, item) => total + item.product.price * item.quantity, 0);
-  const totalDiscount = cart.reduce((total, item) => total + (item.product.originalPrice - item.product.price) * item.quantity, 0);
+  useEffect(() => {
+    const item = readBuyNowItem(location);
+    setBuyNowItem(item);
+    if (!item) sessionStorage.removeItem(BUY_NOW_STORAGE_KEY);
+  }, [location]);
+
+  const checkoutItems = buyNowItem ? [buyNowItem] : cart;
+  const isBuyNowCheckout = Boolean(buyNowItem);
+  const itemTotal = checkoutItems.reduce((total, item) => total + item.product.price * item.quantity, 0);
+  const totalDiscount = checkoutItems.reduce((total, item) => total + (item.product.originalPrice - item.product.price) * item.quantity, 0);
   const shipping = itemTotal > 999 ? 0 : 99;
   const grandTotal = itemTotal + shipping;
-  const stockIssues = cart.filter((item) => typeof item.product.stock === 'number' && item.product.stock < item.quantity);
+  const stockIssues = checkoutItems.filter((item) => typeof item.product.stock === 'number' && item.product.stock < item.quantity);
 
   const updateAddress = (key: keyof DeliveryAddress, value: string) => {
     setAddress((current) => ({ ...current, [key]: value }));
@@ -145,6 +190,15 @@ export function CheckoutPage() {
     } catch (error) {
       console.error('[Razorpay] Failed to record payment failure:', error);
     }
+  };
+
+  const clearCompletedCheckout = () => {
+    if (isBuyNowCheckout) {
+      sessionStorage.removeItem(BUY_NOW_STORAGE_KEY);
+      setBuyNowItem(null);
+      return;
+    }
+    clearCart();
   };
 
   const openRazorpayCheckout = async (order: CheckoutOrder) => {
@@ -170,7 +224,7 @@ export function CheckoutPage() {
       amount: order.amount,
       currency: order.currency,
       name: 'Trendora',
-      description: order.description || `${cart.length} Trendora item${cart.length === 1 ? '' : 's'}`,
+      description: order.description || `${checkoutItems.length} Trendora item${checkoutItems.length === 1 ? '' : 's'}`,
       order_id: order.orderId,
       prefill: {
         name: order.customer?.name || address.fullName || user?.name || '',
@@ -179,10 +233,28 @@ export function CheckoutPage() {
       },
       notes: {
         orderId: order.orderId,
-        products: cart.map((item) => `${item.product.name} x ${item.quantity}`).join(', ').slice(0, 255),
+        products: checkoutItems.map((item) => `${item.product.name} x ${item.quantity}`).join(', ').slice(0, 255),
       },
       theme: {
         color: '#111111',
+      },
+      config: {
+        display: {
+          blocks: {
+            upi: {
+              name: 'Pay by UPI',
+              instruments: [{ method: 'upi' }],
+            },
+            cards: {
+              name: 'Cards and netbanking',
+              instruments: [{ method: 'card' }, { method: 'netbanking' }, { method: 'wallet' }],
+            },
+          },
+          sequence: ['block.upi', 'block.cards'],
+          preferences: {
+            show_default_blocks: true,
+          },
+        },
       },
       handler: async (paymentResponse) => {
         console.log('[Razorpay] Payment success callback received:', {
@@ -205,7 +277,8 @@ export function CheckoutPage() {
           });
 
           console.log('[Razorpay] Payment verified by backend:', verifyResult);
-          clearCart();
+          clearCompletedCheckout();
+          setPendingRazorpayOrder(null);
           setMessage('Payment successful. Order place ho gaya hai.');
           if (authToken) {
             navigate(`/orders/${verifyResult.orderId || order.orderId}`);
@@ -224,6 +297,7 @@ export function CheckoutPage() {
           console.warn('[Razorpay] Checkout modal dismissed:', order.orderId);
           setPlacingOrder(false);
           setMessage(reason);
+          setPendingRazorpayOrder(null);
           recordPaymentFailure(order.orderId, reason);
         },
       },
@@ -235,18 +309,20 @@ export function CheckoutPage() {
       console.error('[Razorpay] Payment failed event:', failureResponse);
       setPlacingOrder(false);
       setMessage(description);
+      setPendingRazorpayOrder(null);
       recordPaymentFailure(order.orderId, description);
     });
 
     console.log('[Razorpay] Opening checkout popup now.');
+    setPendingRazorpayOrder(order);
     razorpay.open();
   };
 
   const handlePlaceOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (cart.length === 0) {
-      setMessage('Cart empty hai. Pehle product add karo.');
+    if (checkoutItems.length === 0) {
+      setMessage('Checkout empty hai. Pehle product select karo.');
       return;
     }
 
@@ -259,14 +335,14 @@ export function CheckoutPage() {
     setMessage('');
 
     try {
-      console.log('[Checkout] Creating order:', { amount: grandTotal, paymentMethod, itemCount: cart.length });
+      console.log('[Checkout] Creating order:', { amount: grandTotal, paymentMethod, itemCount: checkoutItems.length, isBuyNowCheckout });
       const order = await apiFetch<CheckoutOrder>('/api/orders/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
-        body: JSON.stringify({ amount: grandTotal, address, items: cart, paymentMode: paymentMethod }),
+        body: JSON.stringify({ amount: grandTotal, address, items: checkoutItems, paymentMode: paymentMethod }),
       });
 
       console.log('[Checkout] Order create response:', {
@@ -279,7 +355,7 @@ export function CheckoutPage() {
       });
 
       if (order.paymentMode === 'mock' || order.paymentMode === 'cod') {
-        clearCart();
+        clearCompletedCheckout();
         setMessage(`${order.message} Demo order id: ${order.orderId}`);
         setPlacingOrder(false);
         if (authToken) {
@@ -288,7 +364,7 @@ export function CheckoutPage() {
         return;
       }
 
-      setMessage(`Razorpay order ready: ${order.orderId}. Checkout popup open ho raha hai...`);
+      setMessage(`Razorpay order ready: ${order.orderId}. Popup me UPI option choose karke UPI ID, app, ya QR se payment complete karo.`);
       await openRazorpayCheckout(order);
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'Checkout start nahi ho paya.';
@@ -298,12 +374,12 @@ export function CheckoutPage() {
     }
   };
 
-  if (cart.length === 0 && !message) {
+  if (checkoutItems.length === 0 && !message) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-white p-6 text-center">
         <Truck size={48} className="mb-4 text-gray-300" />
         <h1 className="text-xl font-bold">Checkout empty hai</h1>
-        <p className="mt-2 text-sm text-gray-500">Cart me product add karke checkout continue karo.</p>
+        <p className="mt-2 text-sm text-gray-500">Product select karke checkout continue karo.</p>
         {!user && <p className="mt-2 text-xs text-gray-400">Guest checkout allowed hai, but account login se order history aur tracking milti hai.</p>}
         <button onClick={() => navigate('/')} className="mt-6 rounded-full bg-black px-8 py-3 font-bold text-white">
           Shop Now
@@ -320,7 +396,7 @@ export function CheckoutPage() {
         </button>
         <div>
           <h1 className="text-lg font-black">Secure Checkout</h1>
-          <p className="text-xs text-gray-500">Address, delivery and payment</p>
+          <p className="text-xs text-gray-500">{isBuyNowCheckout ? 'Buy Now checkout: sirf selected product ka payment' : 'Cart checkout: bag ke products ka payment'}</p>
         </div>
       </header>
 
@@ -353,7 +429,7 @@ export function CheckoutPage() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
             <button type="button" onClick={() => setPaymentMethod('razorpay')} className={`rounded-xl border p-4 text-left text-sm font-bold ${paymentMethod === 'razorpay' ? 'border-black bg-black text-white' : 'border-gray-200'}`}>
               Razorpay
-              <span className="block text-xs font-medium opacity-70">UPI, cards, netbanking</span>
+              <span className="block text-xs font-medium opacity-70">UPI, QR, cards, netbanking</span>
             </button>
             <button type="button" onClick={() => setPaymentMethod('cod')} className={`rounded-xl border p-4 text-left text-sm font-bold ${paymentMethod === 'cod' ? 'border-black bg-black text-white' : 'border-gray-200'}`}>
               Cash on Delivery
@@ -364,6 +440,23 @@ export function CheckoutPage() {
 
         <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm lg:row-span-2 lg:h-max lg:p-6">
           <h2 className="mb-3 font-bold">Order Summary</h2>
+          {isBuyNowCheckout && (
+            <div className="mb-3 rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-xs font-bold text-emerald-700">
+              Buy Now mode active hai. Cart ke purane products is payment me include nahi honge.
+            </div>
+          )}
+          <div className="mb-4 space-y-3">
+            {checkoutItems.map((item) => (
+              <div key={`${item.product._id}-${item.selectedSize}-${item.selectedColor}`} className="flex gap-3 rounded-xl border border-gray-100 p-2">
+                <img src={assetUrl(item.product.image)} alt={item.product.name} className="h-14 w-12 rounded-lg bg-gray-100 object-cover" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-black text-gray-900">{item.product.name}</p>
+                  <p className="text-xs text-gray-500">Qty {item.quantity} · {item.selectedSize} · {item.selectedColor}</p>
+                  <p className="text-sm font-bold text-gray-900">₹{item.product.price * item.quantity}</p>
+                </div>
+              </div>
+            ))}
+          </div>
           <div className="flex flex-col gap-2 text-sm text-gray-600">
             <div className="flex justify-between"><span>Total MRP</span><span>₹{itemTotal + totalDiscount}</span></div>
             <div className="flex justify-between text-green-600"><span>Discount</span><span>-₹{totalDiscount}</span></div>
@@ -380,6 +473,15 @@ export function CheckoutPage() {
         {message && (
           <div className="rounded-2xl bg-green-50 p-4 text-sm font-semibold text-green-700 lg:col-span-2">
             <ShieldCheck size={18} className="mb-2" /> {message}
+            {pendingRazorpayOrder && !placingOrder && (
+              <button
+                type="button"
+                onClick={() => openRazorpayCheckout(pendingRazorpayOrder).catch((error) => setMessage(error instanceof Error ? error.message : 'Razorpay popup open nahi ho paya.'))}
+                className="mt-3 rounded-full bg-black px-5 py-2 text-xs font-black text-white"
+              >
+                OPEN PAYMENT AGAIN
+              </button>
+            )}
           </div>
         )}
 

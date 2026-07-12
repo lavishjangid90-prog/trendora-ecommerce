@@ -2,7 +2,7 @@ import { apiFetch, assetUrl } from "@/config";
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Heart, Star, ShoppingBag, Share2, Truck, Ruler } from 'lucide-react';
-import { Product } from '../types';
+import { CartItem, Product } from '../types';
 import { useStore } from '../store/useStore';
 import { cn } from '../lib/utils';
 import { usePageMeta } from '../lib/usePageMeta';
@@ -65,13 +65,14 @@ export function ProductDetailsPage() {
 
   const handleBuyNow = () => {
     if (stockAvailable <= 0) return;
-    addToCart({
+    const buyNowItem: CartItem = {
       product,
       quantity: 1,
       selectedSize,
       selectedColor
-    });
-    navigate('/checkout');
+    };
+    sessionStorage.setItem('trendora-buy-now-item', JSON.stringify(buyNowItem));
+    navigate('/checkout?mode=buy-now', { state: { buyNowItem } });
   };
 
   return (
