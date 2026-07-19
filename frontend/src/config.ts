@@ -1,7 +1,10 @@
-const rawApiUrl = String(import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "").trim();
-const useRelativeApiInProduction = !import.meta.env.DEV;
+const rawApiUrl = String(
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_API_BASE_URL ||
+  ""
+).trim();
 
-export const API_URL = useRelativeApiInProduction ? "" : rawApiUrl.replace(/\/+$/, "");
+export const API_URL = rawApiUrl.replace(/\/+$/, "");
 
 export function apiUrl(path: string) {
   if (/^https?:\/\//i.test(path)) return path;
