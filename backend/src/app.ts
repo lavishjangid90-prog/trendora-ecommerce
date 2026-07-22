@@ -5,17 +5,21 @@ import mongoose from "mongoose";
 import { createServer as createViteServer } from "vite";
 import Razorpay from "razorpay";
 import fs from "fs/promises";
-import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { createHmac, randomUUID } from "crypto";
 import { GoogleGenAI } from "@google/genai";
 import { backendDir, dataFiles, environment, envPath, frontendDist, paths } from "./config/environment";
-import { createAuthMiddleware } from "./middlewares/auth.middleware";
+import { createCustomerAuthMiddleware } from "./middlewares/auth.middleware";
+import { createAdminMiddleware } from "./middlewares/admin.middleware";
 import { errorMiddleware } from "./middlewares/error.middleware";
 import { readJsonFile, writeJsonFile as writeJsonRepository } from "./repositories/json.repository";
+import { createUserRepository } from "./repositories/user.repository";
 import { normalizeProductCode } from "./utils/product-code";
 import { createProductController } from "./controllers/product.controller";
 import { createProductRouter } from "./routes/product.routes";
+import { createAuthService, type AccountUser } from "./services/auth.service";
+import { createAuthController } from "./controllers/auth.controller";
+import { createAuthRouter } from "./routes/auth.routes";
 
 console.log("Backend cwd =", process.cwd());
 console.log("Backend env file =", envPath);
@@ -169,18 +173,6 @@ type OrderRecord = {
   statusHistory?: Array<{ status: string; note: string; at: string }>;
   createdAt: string;
 };
-type AccountUser = {
-  _id: string;
-  name: string;
-  email: string;
-  passwordHash?: string;
-  role: "user" | "admin" | "manager";
-  blocked: boolean;
-  createdAt: string;
-  orders: number;
-  spent: number;
-  avatar?: string;
-};
 type Coupon = {
   _id: string;
   code: string;
@@ -262,40 +254,6 @@ function generateProductCode(category: unknown) {
     code = `${prefix}-${Math.floor(100000 + Math.random() * 900000)}`;
   } while (products.some((product) => product.code === code));
   return code;
-}
-
-function getPublicUser(user: AccountUser) {
-  const { passwordHash, ...safeUser } = user;
-  return safeUser;
-}
-
-function makeAuthToken(user: AccountUser) {
-  return jwt.sign(
-    {
-      sub: user._id,
-      email: user.email,
-      role: user.role,
-      name: user.name,
-    },
-    jwtSecret,
-    { expiresIn: "7d" },
-  );
-}
-
-function getRequestUser(req: express.Request) {
-  const authHeader = req.header("authorization") || "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-
-  if (!token) return null;
-
-  try {
-    const payload = jwt.verify(token, jwtSecret) as { sub?: string; email?: string; role?: string };
-    const user = users.find((item) => item._id === payload.sub || item.email.toLowerCase() === String(payload.email || "").toLowerCase());
-    if (!user || user.blocked) return null;
-    return user;
-  } catch {
-    return null;
-  }
 }
 
 function chooseRecommendedProducts(analysisText: string, contextText = "") {
@@ -586,7 +544,7 @@ async function persistOrders() {
 }
 
 async function persistUsers() {
-  await writeJsonFile(usersFile, users);
+  await userRepository.save(users);
 }
 
 async function persistAiAnalytics() {
@@ -799,7 +757,7 @@ export async function startServer() {
 
   const savedProducts = await readJsonFile<Product[]>(productsFile, []);
   const savedOrders = await readJsonFile<OrderRecord[]>(ordersFile, []);
-  const savedUsers = await readJsonFile<AccountUser[]>(usersFile, []);
+  const savedUsers = await userRepository.load([]);
   const savedCoupons = await readJsonFile<Coupon[]>(couponsFile, []);
   const savedBanners = await readJsonFile<Banner[]>(bannersFile, []);
   const savedNotifications = await readJsonFile<AdminNotification[]>(notificationsFile, []);
@@ -845,13 +803,13 @@ export async function startServer() {
   syncAdminNotifications();
   await persistNotifications().catch((err) => console.error("Notification save error:", err));
 
-  const { requireAdmin, requireCustomer } = createAuthMiddleware({
-    adminPassword,
-    jwtSecret,
-    getRequestUser,
-  });
+  const authService = createAuthService({ users, jwtSecret, adminEmail, adminPassword, persistUsers });
+  const requireAdmin = createAdminMiddleware(adminPassword, jwtSecret);
+  const requireCustomer = createCustomerAuthMiddleware(authService.getRequestUser);
+  const authController = createAuthController(authService);
 
   app.use("/api", createProductRouter(createProductController(products, banners)));
+  app.use("/api", createAuthRouter(authController, requireCustomer, requireAdmin));
 
   // Conditional DB Connection
   let isDbConnected = false;
