@@ -1,4 +1,3 @@
-import dotenv from "dotenv";
 import express from "express";
 import path from "path";
 import cors from "cors";
@@ -10,14 +9,11 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { createHmac, randomUUID } from "crypto";
 import { GoogleGenAI } from "@google/genai";
-import { fileURLToPath } from "url";
-
-const currentModuleDir = path.dirname(fileURLToPath(import.meta.url));
-const backendDir =
-  path.basename(currentModuleDir) === "dist" ? path.dirname(currentModuleDir) : currentModuleDir;
-const envPath = path.join(backendDir, ".env.local");
-
-dotenv.config({ path: envPath });
+import { backendDir, dataFiles, environment, envPath, frontendDist, paths } from "./src/config/environment";
+import { createAuthMiddleware } from "./src/middlewares/auth.middleware";
+import { errorMiddleware } from "./src/middlewares/error.middleware";
+import { readJsonFile, writeJsonFile as writeJsonRepository } from "./src/repositories/json.repository";
+import { normalizeProductCode } from "./src/utils/product-code";
 
 console.log("Backend cwd =", process.cwd());
 console.log("Backend env file =", envPath);
@@ -245,34 +241,17 @@ const coupons: Coupon[] = [];
 const banners: Banner[] = [];
 const notifications: AdminNotification[] = [];
 const aiAnalytics: AiAnalyticsRecord[] = [];
-const frontendRoot = process.env.FRONTEND_DIR
-  ? path.resolve(process.env.FRONTEND_DIR)
-  : path.resolve(backendDir, "../frontend");
-const frontendDist = process.env.FRONTEND_DIST
-  ? path.resolve(process.env.FRONTEND_DIST)
-  : path.join(frontendRoot, "dist");
-const dataDir = path.join(backendDir, "data");
-const uploadsDir = path.join(dataDir, "uploads");
-const productsFile = path.join(dataDir, "products.json");
-const ordersFile = path.join(dataDir, "orders.json");
-const usersFile = path.join(dataDir, "users.json");
-const couponsFile = path.join(dataDir, "coupons.json");
-const bannersFile = path.join(dataDir, "banners.json");
-const notificationsFile = path.join(dataDir, "notifications.json");
-const aiAnalyticsFile = path.join(dataDir, "ai-analytics.json");
-const adminEmail = process.env.ADMIN_EMAIL || "admin@trendora.local";
-const adminPassword = process.env.ADMIN_PASSWORD || process.env.ADMIN_KEY || "trendora-admin";
-const jwtSecret = process.env.JWT_SECRET || "trendora-local-admin-secret";
-const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
-
-function normalizeProductCode(value: unknown) {
-  return String(value || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9-]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
+const frontendRoot = paths.frontendRoot;
+const dataDir = paths.dataDir;
+const uploadsDir = dataFiles.uploadsDir;
+const productsFile = dataFiles.products;
+const ordersFile = dataFiles.orders;
+const usersFile = dataFiles.users;
+const couponsFile = dataFiles.coupons;
+const bannersFile = dataFiles.banners;
+const notificationsFile = dataFiles.notifications;
+const aiAnalyticsFile = dataFiles.aiAnalytics;
+const { adminEmail, adminPassword, jwtSecret, geminiApiKey } = environment;
 
 function generateProductCode(category: unknown) {
   const prefix = normalizeProductCode(category).slice(0, 3) || "TRD";
@@ -785,24 +764,14 @@ function parseBulkProducts(content: string, format: "json" | "csv") {
   });
 }
 
-async function readJsonFile<T>(filePath: string, fallback: T): Promise<T> {
-  try {
-    const contents = await fs.readFile(filePath, "utf8");
-    return JSON.parse(contents) as T;
-  } catch {
-    return fallback;
-  }
-}
-
 async function writeJsonFile(filePath: string, data: unknown) {
-  await fs.mkdir(dataDir, { recursive: true });
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2));
+  await writeJsonRepository(dataDir, filePath, data);
 }
 
-async function startServer() {
+export async function startServer() {
   const app = express();
-  const PORT: number = Number(process.env.PORT) || 3000;
-  const HOST = process.env.HOST || "0.0.0.0";
+  const PORT = environment.port;
+  const HOST = environment.host;
   const allowedOrigins = [
     process.env.FRONTEND_URL,
     process.env.APP_URL,
@@ -874,45 +843,18 @@ async function startServer() {
   syncAdminNotifications();
   await persistNotifications().catch((err) => console.error("Notification save error:", err));
 
-  const requireAdmin: express.RequestHandler = (req, res, next) => {
-    const authHeader = req.header("authorization") || "";
-    const legacyKey = req.header("x-admin-key");
-
-    if (legacyKey && legacyKey === adminPassword) {
-      next();
-      return;
-    }
-
-    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-
-    try {
-      const payload = jwt.verify(token, jwtSecret) as { role?: string };
-      if (payload.role !== "admin" && payload.role !== "manager") {
-        res.status(403).json({ message: "Admin role required." });
-        return;
-      }
-      next();
-    } catch {
-      res.status(401).json({ message: "Admin login required." });
-    }
-  };
-
-  const requireCustomer: express.RequestHandler = (req, res, next) => {
-    const user = getRequestUser(req);
-    if (!user) {
-      res.status(401).json({ message: "Login required." });
-      return;
-    }
-    (req as express.Request & { customer?: AccountUser }).customer = user;
-    next();
-  };
+  const { requireAdmin, requireCustomer } = createAuthMiddleware({
+    adminPassword,
+    jwtSecret,
+    getRequestUser,
+  });
 
   // Conditional DB Connection
   let isDbConnected = false;
 
-  if (process.env.MONGODB_URI) {
+  if (environment.mongoUri) {
     try {
-      await mongoose.connect(process.env.MONGODB_URI);
+      await mongoose.connect(environment.mongoUri);
       console.log("Connected to MongoDB Atlas");
       isDbConnected = true;
     } catch (err) {
@@ -2221,6 +2163,8 @@ async function startServer() {
     });
   }
 
+  app.use(errorMiddleware);
+
   const listen = (port: number) => {
     const server = app.listen(port, HOST, () => {
       console.log(`Server listening on ${HOST}:${port}`);
@@ -2239,5 +2183,3 @@ async function startServer() {
 
   listen(PORT);
 }
-
-startServer();
