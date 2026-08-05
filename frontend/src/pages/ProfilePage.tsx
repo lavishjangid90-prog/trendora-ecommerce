@@ -18,6 +18,7 @@ export function ProfilePage() {
   const clearAuthSession = useStore((state) => state.clearAuthSession);
 
   const [mode, setMode] = useState<AuthMode>('login');
+  const [registerAsSeller, setRegisterAsSeller] = useState(false);
   const [credentials, setCredentials] = useState(emptyCredentials);
   const [loading, setLoading] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(Boolean(authToken));
@@ -74,7 +75,9 @@ export function ProfilePage() {
     setMessage('');
 
     try {
-      const endpoint = mode === 'register' ? '/api/auth/register' : '/api/auth/login';
+      const endpoint = mode === 'register'
+        ? (registerAsSeller ? '/api/auth/register-seller' : '/api/auth/register')
+        : '/api/auth/login';
       const phone = credentials.phone?.trim() || undefined;
       if (mode === 'register' && phone && !/^[+\d][\d\s-]{6,20}$/.test(phone)) {
         throw new Error('Invalid phone number format.');
@@ -206,13 +209,24 @@ export function ProfilePage() {
                   className="h-12 w-full rounded-xl border border-gray-200 px-3 outline-none focus:border-black"
                 />
                 {mode === 'register' && (
-                  <input
-                    value={credentials.phone}
-                    onChange={(event) => updateField('phone', event.target.value)}
-                    placeholder="Phone (optional, e.g. +919876543210)"
-                    type="tel"
-                    className="h-12 w-full rounded-xl border border-gray-200 px-3 outline-none focus:border-black"
-                  />
+                  <>
+                    <input
+                      value={credentials.phone}
+                      onChange={(event) => updateField('phone', event.target.value)}
+                      placeholder="Phone (optional, e.g. +919876543210)"
+                      type="tel"
+                      className="h-12 w-full rounded-xl border border-gray-200 px-3 outline-none focus:border-black"
+                    />
+                    <label className="mt-2 flex items-center gap-2 text-sm text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={registerAsSeller}
+                        onChange={(event) => setRegisterAsSeller(event.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300 text-pink-500 focus:ring-pink-500"
+                      />
+                      Register as seller (personal admin panel access)
+                    </label>
+                  </>
                 )}
                 <input
                   required

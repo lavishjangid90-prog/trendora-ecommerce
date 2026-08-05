@@ -42,7 +42,7 @@ export interface User {
   email: string;
   avatar?: string;
   phone?: string;
-  role: "user" | "admin";
+  role: "user" | "seller" | "admin";
 }
 
 export interface OrderHistoryItem {

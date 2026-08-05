@@ -845,6 +845,13 @@ export async function startServer() {
   app.use("/api", createProductRouter(createProductController(products, banners)));
   app.use("/api", createAuthRouter(authController, requireCustomer, requireAdmin));
 
+  // Seller registration endpoint (creates a user with role 'seller')
+  app.post("/api/auth/register-seller", async (req, res) => {
+    // For production, add additional vetting/verification before granting seller role
+    const result = await (authController as any).registerSeller(req, res as any);
+    // controller already sends response; nothing further required here
+  });
+
   // Conditional DB Connection
   let isDbConnected = false;
 
@@ -1280,19 +1287,36 @@ export async function startServer() {
   );
 
   app.get("/api/admin/dashboard", requireAdmin, (_req, res) => {
+    // Scope dashboard to seller when a seller is authenticated via token
     syncAdminNotifications();
-    const revenue = orders.reduce((sum, order) => sum + order.amount / 100, 0);
-    const inventoryValue = products.reduce((sum, product) => sum + Number(product.price || 0) * Number(product.stock || 0), 0);
-    const inventoryCost = products.reduce((sum, product) => sum + Number(product.costPrice || 0) * Number(product.stock || 0), 0);
-    const lowStockCount = products.filter((product) => Number(product.stock ?? 0) <= Number(product.lowStockThreshold ?? 5)).length;
+    const payload = (_req as any).adminPayload || {};
+    const requester = authService.getRequestUser(_req as any);
+
+    let scopeProducts = products;
+    let scopeOrders = orders;
+    let scopeNotifications = notifications;
+    let scopeUsers = users;
+
+    if (requester && requester.role === 'seller') {
+      scopeProducts = products.filter((p) => p.sellerId === requester._id);
+      const productIds = new Set(scopeProducts.map((p) => p._id));
+      scopeOrders = orders.filter((order) => (Array.isArray(order.items) ? order.items : []).some((it) => productIds.has(it?.product?._id || '')));
+      scopeNotifications = notifications.filter((n) => !n.entityType || (n.entityType === 'product' && productIds.has(String(n.entityId || ''))));
+      scopeUsers = [requester];
+    }
+
+    const revenue = scopeOrders.reduce((sum, order) => sum + order.amount / 100, 0);
+    const inventoryValue = scopeProducts.reduce((sum, product) => sum + Number(product.price || 0) * Number(product.stock || 0), 0);
+    const inventoryCost = scopeProducts.reduce((sum, product) => sum + Number(product.costPrice || 0) * Number(product.stock || 0), 0);
+    const lowStockCount = scopeProducts.filter((product) => Number(product.stock ?? 0) <= Number(product.lowStockThreshold ?? 5)).length;
     let estimatedProfit = 0;
     const productSales = new Map<string, { name: string; qty: number; revenue: number }>();
 
-    orders.forEach((order) => {
+    scopeOrders.forEach((order) => {
       const items = Array.isArray(order.items) ? order.items as Array<{ product?: Product; quantity?: number }> : [];
       items.forEach((item) => {
         if (!item.product) return;
-        const currentProduct = products.find((product) => product._id === item.product?._id);
+        const currentProduct = scopeProducts.find((product) => product._id === item.product?._id);
         const costPrice = Number(currentProduct?.costPrice ?? item.product.costPrice ?? 0);
         const current = productSales.get(item.product._id) || { name: item.product.name, qty: 0, revenue: 0 };
         const quantity = Number(item.quantity || 0);
@@ -1306,18 +1330,18 @@ export async function startServer() {
     res.json({
       metrics: {
         revenue,
-        orders: orders.length,
-        users: users.length,
-        products: products.length,
-        traffic: Math.max(orders.length * 31 + users.length * 12, 184),
+        orders: scopeOrders.length,
+        users: scopeUsers.length,
+        products: scopeProducts.length,
+        traffic: Math.max(scopeOrders.length * 31 + scopeUsers.length * 12, 184),
         inventoryValue,
         inventoryCost,
         estimatedProfit,
         lowStock: lowStockCount,
       },
       notificationSummary: {
-        total: notifications.length,
-        unread: notifications.filter((item) => !item.readAt).length,
+        total: scopeNotifications.length,
+        unread: scopeNotifications.filter((item) => !item.readAt).length,}
       },
       revenueSeries: orders.slice(0, 7).reverse().map((order, index) => ({
         label: `Day ${index + 1}`,
@@ -1431,7 +1455,16 @@ export async function startServer() {
 
   app.get("/api/admin/notifications", requireAdmin, (_req, res) => {
     syncAdminNotifications();
-    const sorted = [...notifications].sort((a, b) => parseAdminTimestamp(b.createdAt) - parseAdminTimestamp(a.createdAt));
+    const payload = (_req as any).adminPayload || {};
+    const requester = authService.getRequestUser(_req as any);
+
+    let scopeNotifications = notifications;
+    if (requester && requester.role === 'seller') {
+      const sellerProductIds = new Set(products.filter((p) => p.sellerId === requester._id).map((p) => p._id));
+      scopeNotifications = notifications.filter((n) => !n.entityType || (n.entityType === 'product' && sellerProductIds.has(String(n.entityId || ''))));
+    }
+
+    const sorted = [...scopeNotifications].sort((a, b) => parseAdminTimestamp(b.createdAt) - parseAdminTimestamp(a.createdAt));
     res.json({
       notifications: sorted,
       unreadCount: sorted.filter((item) => !item.readAt).length,
@@ -1443,6 +1476,7 @@ export async function startServer() {
     const ids = Array.isArray(req.body.ids) ? req.body.ids.map((value) => String(value)) : [];
     const markAll = Boolean(req.body.all);
 
+    const requester = authService.getRequestUser(req as any);
     if (!ids.length && !markAll) {
       res.status(400).json({ message: "Notification ids are required." });
       return;
@@ -1451,6 +1485,11 @@ export async function startServer() {
     const now = new Date().toISOString();
     notifications.forEach((item) => {
       if (markAll || ids.includes(item._id)) {
+        // sellers may only mark notifications related to their products
+        if (requester && requester.role === 'seller' && item.entityType === 'product') {
+          const prod = products.find((p) => p._id === String(item.entityId || ''));
+          if (prod && prod.sellerId !== requester._id) return;
+        }
         item.readAt = now;
       }
     });
@@ -1479,6 +1518,13 @@ export async function startServer() {
 
     product = { ...product, _id: `p${Date.now()}` };
 
+    const requester = authService.getRequestUser(req as any);
+    if (requester && requester.role === 'seller') {
+      // assign seller as owner of product created via seller-admin
+      product.sellerId = requester._id;
+      product.sellerName = requester.name;
+    }
+
     products.unshift(product);
     persistProducts().catch((err) => {
       console.error("Product save error:", err);
@@ -1506,10 +1552,18 @@ export async function startServer() {
     }
 
     const current = products[productIndex];
+    const requester = authService.getRequestUser(req as any);
+    if (requester && requester.role === 'seller' && current.sellerId !== requester._id) {
+      res.status(403).json({ message: "You can only edit your own products." });
+      return;
+    }
+
     const nextPayload = {
       ...current,
       ...req.body,
       _id: current._id,
+      sellerId: current.sellerId,
+      sellerName: current.sellerName,
     };
 
     let updated: Product;
@@ -1525,6 +1579,8 @@ export async function startServer() {
       return;
     }
 
+    updated.sellerId = current.sellerId;
+    updated.sellerName = current.sellerName;
     products[productIndex] = updated;
     persistProducts().catch((err) => {
       console.error("Product save error:", err);
@@ -1551,7 +1607,14 @@ export async function startServer() {
       return;
     }
 
-    const [removed] = products.splice(productIndex, 1);
+    const removed = products[productIndex];
+    const requester = authService.getRequestUser(req as any);
+    if (requester && requester.role === 'seller' && removed.sellerId !== requester._id) {
+      res.status(403).json({ message: "You can only delete your own products." });
+      return;
+    }
+
+    products.splice(productIndex, 1);
     persistProducts().catch((err) => {
       console.error("Product save error:", err);
     });
@@ -1597,6 +1660,12 @@ export async function startServer() {
             return;
           }
 
+          const requester = authService.getRequestUser(req as any);
+          if (requester && requester.role === 'seller') {
+            product.sellerId = requester._id;
+            product.sellerName = requester.name;
+          }
+
           products.unshift(product);
           created.push(product);
           upsertNotification({
@@ -1635,6 +1704,13 @@ export async function startServer() {
   });
 
   app.get("/api/admin/orders", requireAdmin, (_req, res) => {
+    const requester = authService.getRequestUser(_req as any);
+    if (requester && requester.role === 'seller') {
+      const sellerProductIds = new Set(products.filter((p) => p.sellerId === requester._id).map((p) => p._id));
+      const sellerOrders = orders.filter((order) => (Array.isArray(order.items) ? order.items : []).some((it) => sellerProductIds.has(it?.product?._id || '')));
+      res.json(sellerOrders);
+      return;
+    }
     res.json(orders);
   });
 
@@ -1643,6 +1719,17 @@ export async function startServer() {
     if (!order) {
       res.status(404).json({ message: "Order not found." });
       return;
+    }
+
+    const requester = authService.getRequestUser(req as any);
+    if (requester && requester.role === 'seller') {
+      // seller may only update orders that contain their products
+      const sellerProductIds = new Set(products.filter((p) => p.sellerId === requester._id).map((p) => p._id));
+      const contains = (Array.isArray(order.items) ? order.items : []).some((it) => sellerProductIds.has(it?.product?._id || ''));
+      if (!contains) {
+        res.status(403).json({ message: "You can only modify orders for your products." });
+        return;
+      }
     }
 
     const previousStatus = order.status;

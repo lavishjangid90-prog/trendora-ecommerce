@@ -186,6 +186,8 @@ const tabs = [
 type TabId = (typeof tabs)[number]['id'];
 
 export function AdminPage() {
+  const appAuthToken = useStore((state) => state.authToken);
+  const currentUser = useStore((state) => state.user);
   const [token, setToken] = useState(() => localStorage.getItem('trendora-admin-token') || '');
   const [login, setLogin] = useState({ email: 'admin@trendora.local', password: '' });
   const [activeTab, setActiveTab] = useState<TabId>('analytics');
@@ -221,6 +223,12 @@ export function AdminPage() {
     Authorization: `Bearer ${token}`,
   }), [token]);
 
+  useEffect(() => {
+    if (appAuthToken && appAuthToken !== token) {
+      setToken(appAuthToken);
+    }
+  }, [appAuthToken, token]);
+
   const lowStockProducts = products.filter((product) => Number(product.stock ?? 0) <= Number(product.lowStockThreshold ?? 5));
   const unreadNotificationCount = notifications.filter((item) => !item.readAt).length;
   const urgentNotificationCount = notifications.filter((item) => !item.readAt && (item.severity === 'warning' || item.severity === 'danger')).length;
@@ -240,31 +248,41 @@ export function AdminPage() {
     setLoading(true);
     setMessage('');
     try {
-      const [dashboardData, productData, orderData, userData, couponData, bannerData, notificationData] = await Promise.all([
-        adminFetch<Dashboard>('/api/admin/dashboard'),
-        adminFetch<AdminProduct[]>('/api/products'),
-        adminFetch<OrderRecord[]>('/api/admin/orders'),
-        adminFetch<AdminUser[]>('/api/admin/users'),
-        adminFetch<Coupon[]>('/api/admin/coupons'),
-        adminFetch<Banner[]>('/api/admin/banners'),
-        adminFetch<{ notifications: AdminNotification[] }>('/api/admin/notifications'),
-      ]);
+      const dashboardData = await adminFetch<Dashboard>('/api/admin/dashboard');
+      const productData = await adminFetch<AdminProduct[]>('/api/admin/products');
+      const orderData = await adminFetch<OrderRecord[]>('/api/admin/orders');
+      const notificationData = await adminFetch<{ notifications: AdminNotification[] }>('/api/admin/notifications');
+
       setDashboard(dashboardData);
       setProducts(productData);
       setOrders(orderData);
-      setUsers(userData);
-      setCoupons(couponData);
-      setBanners(bannerData);
       setNotifications(notificationData.notifications);
+
+      if (currentUser?.role !== 'seller') {
+        const [userData, couponData, bannerData] = await Promise.all([
+          adminFetch<AdminUser[]>('/api/admin/users'),
+          adminFetch<Coupon[]>('/api/admin/coupons'),
+          adminFetch<Banner[]>('/api/admin/banners'),
+        ]);
+        setUsers(userData);
+        setCoupons(couponData);
+        setBanners(bannerData);
+      } else {
+        setUsers([]);
+        setCoupons([]);
+        setBanners([]);
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Admin data load nahi ho paya.');
-      localStorage.removeItem('trendora-admin-token');
-      setToken('');
+      if (currentUser?.role !== 'seller') {
+        localStorage.removeItem('trendora-admin-token');
+        setToken('');
+      }
       setNotifications([]);
     } finally {
       setLoading(false);
     }
-  }, [adminFetch, token]);
+  }, [adminFetch, token, currentUser]);
 
   useEffect(() => {
     loadAdminData();

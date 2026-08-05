@@ -9,7 +9,7 @@ export type AccountUser = {
   email: string;
   passwordHash?: string;
   phone?: string;
-  role: "user" | "admin" | "manager";
+  role: "user" | "seller" | "admin" | "manager";
   blocked: boolean;
   createdAt: string;
   orders: number;
@@ -37,6 +37,35 @@ export function createAuthService(options: AuthOptions) {
       options.jwtSecret,
       { expiresIn: "7d" },
     );
+  }
+
+  // helper to create a seller account (keeps register() behaviour unchanged)
+  async function registerSeller(input: Record<string, unknown>) {
+    const name = String(input.name || "").trim();
+    const email = String(input.email || "").trim().toLowerCase();
+    const password = String(input.password || "");
+
+    if (!name || !email || password.length < 6) {
+      return { status: 400, body: { message: "Name, email and a 6+ character password are required." } };
+    }
+    if (options.users.some((user) => user.email.toLowerCase() === email)) {
+      return { status: 409, body: { message: "Email already registered." } };
+    }
+
+    const user: AccountUser = {
+      _id: `u_${randomUUID()}`,
+      name,
+      email,
+      passwordHash: await bcrypt.hash(password, 10),
+      role: "seller",
+      blocked: false,
+      createdAt: new Date().toISOString(),
+      orders: 0,
+      spent: 0,
+    };
+    options.users.unshift(user);
+    await options.persistUsers();
+    return { status: 201, body: { token: makeAuthToken(user), user: getPublicUser(user) } };
   }
 
   function getRequestUser(req: Request) {
