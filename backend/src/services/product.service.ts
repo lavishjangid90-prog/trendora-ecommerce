@@ -12,6 +12,12 @@ export type ProductLike = {
   variants?: string[];
   keywords?: string[];
   isTrending: boolean;
+  // Seller and promotion metadata
+  sellerId?: string;
+  sellerName?: string;
+  promoted?: boolean;
+  promotedUntil?: string; // ISO date
+  promotionBid?: number; // simple numeric bid used for ordering promoted products
 };
 
 export type BannerLike = { active: boolean };

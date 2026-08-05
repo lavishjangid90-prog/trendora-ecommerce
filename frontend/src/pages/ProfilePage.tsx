@@ -8,7 +8,7 @@ import { apiFetch, assetUrl } from '../config';
 
 type AuthMode = 'login' | 'register';
 
-const emptyCredentials = { name: '', email: '', password: '' };
+const emptyCredentials = { name: '', email: '', password: '', phone: '' };
 
 export function ProfilePage() {
   const navigate = useNavigate();
@@ -29,10 +29,10 @@ export function ProfilePage() {
     description: 'Manage your Trendora account, view order history, and track deliveries.',
   });
 
-  const authHeaders = useMemo(() => (
+  const authHeaders = useMemo<Record<string, string> | undefined>(() => (
     authToken
       ? { Authorization: `Bearer ${authToken}` }
-      : {}
+      : undefined
   ), [authToken]);
 
   const loadAccount = async () => {
@@ -75,8 +75,12 @@ export function ProfilePage() {
 
     try {
       const endpoint = mode === 'register' ? '/api/auth/register' : '/api/auth/login';
+      const phone = credentials.phone?.trim() || undefined;
+      if (mode === 'register' && phone && !/^[+\d][\d\s-]{6,20}$/.test(phone)) {
+        throw new Error('Invalid phone number format.');
+      }
       const payload = mode === 'register'
-        ? { name: credentials.name, email: credentials.email, password: credentials.password }
+        ? { name: credentials.name, email: credentials.email, password: credentials.password, phone }
         : { email: credentials.email, password: credentials.password };
 
       const data = await apiFetch<{ token?: string; user?: AppUser; message?: string }>(endpoint, {
@@ -201,6 +205,15 @@ export function ProfilePage() {
                   type="email"
                   className="h-12 w-full rounded-xl border border-gray-200 px-3 outline-none focus:border-black"
                 />
+                {mode === 'register' && (
+                  <input
+                    value={credentials.phone}
+                    onChange={(event) => updateField('phone', event.target.value)}
+                    placeholder="Phone (optional, e.g. +919876543210)"
+                    type="tel"
+                    className="h-12 w-full rounded-xl border border-gray-200 px-3 outline-none focus:border-black"
+                  />
+                )}
                 <input
                   required
                   value={credentials.password}

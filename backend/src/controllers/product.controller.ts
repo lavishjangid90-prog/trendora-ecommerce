@@ -13,7 +13,22 @@ export function createProductController<TProduct extends ProductLike, TBanner ex
   banners: TBanner[],
 ) {
   const list: RequestHandler = (req, res) => {
-    res.json(filterProducts(products, req.query.category, req.query.search));
+    const filtered = filterProducts(products, req.query.category, req.query.search);
+    const now = Date.now();
+    const sorted = filtered.slice().sort((a, b) => {
+      const aPromoted = a.promoted && a.promotedUntil && new Date(a.promotedUntil).getTime() > now;
+      const bPromoted = b.promoted && b.promotedUntil && new Date(b.promotedUntil).getTime() > now;
+      if (aPromoted && bPromoted) {
+        const aBid = Number(a.promotionBid || 0);
+        const bBid = Number(b.promotionBid || 0);
+        if (bBid !== aBid) return bBid - aBid;
+        return new Date(String(b.promotedUntil || 0)).getTime() - new Date(String(a.promotedUntil || 0)).getTime();
+      }
+      if (aPromoted) return -1;
+      if (bPromoted) return 1;
+      return 0;
+    });
+    res.json(sorted);
   };
 
   const trending: RequestHandler = (_req, res) => {

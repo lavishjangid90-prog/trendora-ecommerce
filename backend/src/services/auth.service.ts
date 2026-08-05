@@ -8,6 +8,7 @@ export type AccountUser = {
   name: string;
   email: string;
   passwordHash?: string;
+  phone?: string;
   role: "user" | "admin" | "manager";
   blocked: boolean;
   createdAt: string;

@@ -6,6 +6,7 @@ import { CartItem, Product } from '../types';
 import { useStore } from '../store/useStore';
 import { cn } from '../lib/utils';
 import { usePageMeta } from '../lib/usePageMeta';
+import PromoteModal from '@/components/PromoteModal';
 
 export function ProductDetailsPage() {
   const { id } = useParams();
@@ -19,6 +20,9 @@ export function ProductDetailsPage() {
   const addToCart = useStore(state => state.addToCart);
   const toggleWishlist = useStore(state => state.toggleWishlist);
   const wishlist = useStore(state => state.wishlist);
+  const user = useStore(state => state.user);
+  const authToken = useStore(state => state.authToken);
+  const [showPromoteModal, setShowPromoteModal] = useState(false);
 
   usePageMeta({
     title: product ? product.seoTitle || `${product.name} | Trendora` : 'Product Details | Trendora',
@@ -210,6 +214,65 @@ export function ProductDetailsPage() {
       {/* Floating Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 z-50 w-full border-t border-gray-100 bg-white p-4 pb-safe shadow-[0_-10px_20px_rgba(0,0,0,0.05)]">
          <div className="mx-auto flex w-full max-w-7xl gap-3">
+          {user && user._id === product.sellerId && (
+            <>
+              <button
+                onClick={() => setShowPromoteModal(true)}
+                className="flex h-14 items-center justify-center gap-2 rounded-full border border-yellow-600 bg-yellow-50 px-3 text-sm font-bold text-yellow-800"
+              >
+                Promote
+              </button>
+              <PromoteModal
+                open={showPromoteModal}
+                initialAmount={100}
+                initialDays={7}
+                onClose={() => setShowPromoteModal(false)}
+                onSubmit={async (amount, days) => {
+                  try {
+                    const res = await apiFetch<any>(`/api/products/${product._id}/promote`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+                      body: JSON.stringify({ amount, days }),
+                    });
+
+                    if (res.keyId && res.orderId) {
+                      const script = document.createElement('script');
+                      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+                      script.async = true;
+                      document.body.appendChild(script);
+                      script.onload = () => {
+                        // @ts-ignore
+                        const rzp = new window.Razorpay({
+                          key: res.keyId,
+                          order_id: res.orderId,
+                          amount: res.amount,
+                          currency: res.currency || 'INR',
+                          handler: async (payload: any) => {
+                            await apiFetch(`/api/promotions/verify`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+                              body: JSON.stringify(payload),
+                            });
+                            window.alert('Promotion activated.');
+                            window.location.reload();
+                          },
+                        });
+                        // @ts-ignore
+                        rzp.open();
+                      };
+                    } else {
+                      window.alert('Product promoted successfully (mock).');
+                      window.location.reload();
+                    }
+                  } catch (err: any) {
+                    window.alert('Promotion failed: ' + String(err?.message || err));
+                  } finally {
+                    setShowPromoteModal(false);
+                  }
+                }}
+              />
+            </>
+          )}
             <button 
               onClick={handleAddToCart}
               disabled={stockAvailable <= 0}

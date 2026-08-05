@@ -22,6 +22,11 @@ export interface Product {
   keywords?: string[];
   seoTitle?: string;
   seoDescription?: string;
+  sellerId?: string;
+  sellerName?: string;
+  promoted?: boolean;
+  promotedUntil?: string;
+  promotionBid?: number;
 }
 
 export interface CartItem {
@@ -36,6 +41,7 @@ export interface User {
   name: string;
   email: string;
   avatar?: string;
+  phone?: string;
   role: "user" | "admin";
 }
 

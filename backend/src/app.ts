@@ -4,6 +4,10 @@ import cors from "cors";
 import mongoose from "mongoose";
 import { createServer as createViteServer } from "vite";
 import Razorpay from "razorpay";
+import nodemailer from "nodemailer";
+import Twilio from "twilio";
+import { initMailer, queueEmail } from "./services/mailer";
+import { renderResetEmail, renderWelcomeEmail } from "./emails/templates";
 import fs from "fs/promises";
 import bcrypt from "bcryptjs";
 import { createHmac, randomUUID } from "crypto";
@@ -807,6 +811,36 @@ export async function startServer() {
   const requireAdmin = createAdminMiddleware(adminPassword, jwtSecret);
   const requireCustomer = createCustomerAuthMiddleware(authService.getRequestUser);
   const authController = createAuthController(authService);
+  
+    // Mailer setup if configured
+    let mailer: nodemailer.Transporter | null = null;
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+      mailer = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: Number(process.env.SMTP_PORT || 587),
+        secure: Number(process.env.SMTP_PORT || 587) === 465,
+        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      });
+      // initialize queued mailer
+      initMailer(mailer);
+    }
+
+    // Twilio client if configured
+    const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
+      ? new Twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+      : null;
+
+    type PromotionRecord = {
+      id: string;
+      productId: string;
+      sellerId?: string;
+      amount: number;
+      days: number;
+      razorpayOrderId?: string;
+      status: "created" | "paid" | "failed";
+    };
+
+    const promotions: PromotionRecord[] = [];
 
   app.use("/api", createProductRouter(createProductController(products, banners)));
   app.use("/api", createAuthRouter(authController, requireCustomer, requireAdmin));
@@ -1049,6 +1083,7 @@ export async function startServer() {
     const name = String(req.body.name || "").trim();
     const email = String(req.body.email || "").trim().toLowerCase();
     const password = String(req.body.password || "");
+    const phone = String(req.body.phone || "").trim();
 
     if (!name || !email || password.length < 6) {
       res.status(400).json({ message: "Name, email and a 6+ character password are required." });
@@ -1065,6 +1100,7 @@ export async function startServer() {
       name,
       email,
       passwordHash: await bcrypt.hash(password, 10),
+      phone: phone || undefined,
       role: "user",
       blocked: false,
       createdAt: new Date().toISOString(),
@@ -1074,6 +1110,15 @@ export async function startServer() {
 
     users.unshift(user);
     await persistUsers();
+    // Queue welcome email when mailer configured
+    try {
+      if (mailer) {
+        const { subject, text, html } = renderWelcomeEmail(user);
+        queueEmail(user.email, subject, html, text);
+      }
+    } catch (err) {
+      console.error('Failed to queue welcome email:', err);
+    }
 
     const token = makeAuthToken(user);
     res.status(201).json({ token, user: getPublicUser(user) });
@@ -1131,6 +1176,82 @@ export async function startServer() {
 
   app.get("/api/admin/session", requireAdmin, (_req, res) => {
     res.json({ authenticated: true, role: "admin" });
+  });
+
+  // Password reset: forgot -> generate token, reset -> set new password
+  app.post("/api/auth/forgot-password", async (req, res) => {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    if (!email) {
+      res.status(400).json({ message: "Email is required." });
+      return;
+    }
+    const user = users.find((u) => String((u as any).email || "").toLowerCase() === email);
+    if (!user) {
+      // Don't reveal whether email exists in production
+      res.json({ message: "If an account exists, a reset token has been sent to the email." });
+      return;
+    }
+    const token = `r_${randomUUID()}`;
+    (user as any).resetToken = token;
+    (user as any).resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
+    await persistUsers();
+    // Queue email using templates when SMTP configured
+    if (mailer) {
+      try {
+        const { subject, text, html } = renderResetEmail(user, token);
+        queueEmail(user.email, subject, html, text);
+        res.json({ message: "Reset token generated and queued for email delivery." });
+        return;
+      } catch (err) {
+        console.error("Failed to queue reset email:", err);
+      }
+    }
+
+    // Fallback: send SMS if Twilio configured and user has phone
+    if (twilioClient && (user as any).phone) {
+      try {
+        await twilioClient.messages.create({
+          from: process.env.TWILIO_FROM || undefined,
+          to: String((user as any).phone),
+          body: `Trendora password reset token: ${token} (expires in 1 hour)`,
+        });
+        res.json({ message: "Reset token generated and sent via SMS." });
+        return;
+      } catch (err) {
+        console.error("Failed to send reset SMS:", err);
+      }
+    }
+
+    // For local testing return the token in development only
+    if (process.env.NODE_ENV === "development") {
+      res.json({ message: "Reset token generated.", resetToken: token });
+    } else {
+      res.json({ message: "If an account exists, a reset token has been sent to the email or phone." });
+    }
+  });
+
+  app.post("/api/auth/reset-password", async (req, res) => {
+    const token = String(req.body.token || "").trim();
+    const password = String(req.body.password || "");
+    if (!token || password.length < 6) {
+      res.status(400).json({ message: "Valid token and a 6+ character password are required." });
+      return;
+    }
+    const user = users.find((u) => (u as any).resetToken === token);
+    if (!user) {
+      res.status(400).json({ message: "Invalid or expired token." });
+      return;
+    }
+    const expiry = Date.parse((user as any).resetTokenExpiry || "");
+    if (!Number.isFinite(expiry) || Date.now() > expiry) {
+      res.status(400).json({ message: "Invalid or expired token." });
+      return;
+    }
+    (user as any).passwordHash = await bcrypt.hash(password, 10);
+    delete (user as any).resetToken;
+    delete (user as any).resetTokenExpiry;
+    await persistUsers();
+    res.json({ message: "Password reset successfully." });
   });
 
   app.post(
@@ -1210,6 +1331,102 @@ export async function startServer() {
         { label: "Social", value: 23 },
       ],
     });
+  });
+
+  // Seller product upload - any authenticated user can upload products as a seller
+  app.post("/api/products", requireCustomer, async (req, res) => {
+    try {
+      const customer = (req as express.Request & { customer?: any }).customer;
+      const payload = buildProductPayload(req.body || {});
+      payload._id = String(payload._id || `p${Date.now()}${Math.floor(Math.random() * 1000)}`);
+      payload.sellerId = customer._id;
+      payload.sellerName = customer.name;
+      products.unshift(payload as Product);
+      await persistProducts();
+      res.status(201).json(payload);
+    } catch (error: any) {
+      res.status(400).json({ message: String(error?.message || error) });
+    }
+  });
+
+  // Promote a product (simple simulated payment). Only the product owner may promote.
+  app.post("/api/products/:id/promote", requireCustomer, async (req, res) => {
+    const customer = (req as express.Request & { customer?: any }).customer;
+    const product = products.find((p) => p._id === req.params.id);
+    if (!product) {
+      res.status(404).json({ message: "Product not found." });
+      return;
+    }
+    if (product.sellerId && product.sellerId !== customer._id) {
+      res.status(403).json({ message: "Only the product owner can promote this product." });
+      return;
+    }
+    const amount = Number(req.body.amount || 0);
+    if (amount <= 0) {
+      res.status(400).json({ message: "Promotion amount must be greater than zero." });
+      return;
+    }
+    const days = Math.max(1, Math.min(30, Number(req.body.days || 7)));
+
+    // If Razorpay configured, create an order and return client info for checkout
+    if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+      try {
+        const razorpay = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
+        const razorAmount = Math.round(amount * 100);
+        const order = await razorpay.orders.create({ amount: razorAmount, currency: "INR", receipt: `promo_${Date.now()}` });
+        const promoId = `pr_${Date.now()}${Math.floor(Math.random() * 1000)}`;
+        promotions.unshift({ id: promoId, productId: product._id, sellerId: customer._id, amount, days, razorpayOrderId: order.id, status: "created" });
+        res.json({ promoId, orderId: order.id, keyId: process.env.RAZORPAY_KEY_ID, amount: razorAmount, currency: order.currency });
+        return;
+      } catch (err) {
+        console.error("Razorpay create promo order error:", err);
+        res.status(500).json({ message: "Unable to create promotion payment order." });
+        return;
+      }
+    }
+
+    // Fallback: mark promoted immediately (mock/local)
+    product.promoted = true;
+    product.promotionBid = amount;
+    product.promotedUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+    await persistProducts().catch((err) => console.error("persistProducts error:", err));
+    res.json(product);
+  });
+
+  // Verify promotion payment and activate promotion
+  app.post("/api/promotions/verify", async (req, res) => {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body || {};
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      res.status(400).json({ message: "Missing Razorpay verification fields." });
+      return;
+    }
+    if (!process.env.RAZORPAY_KEY_SECRET) {
+      res.status(500).json({ message: "Razorpay key secret not configured." });
+      return;
+    }
+    const expectedSignature = createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest("hex");
+    if (expectedSignature !== String(razorpay_signature)) {
+      res.status(400).json({ message: "Invalid payment signature." });
+      return;
+    }
+    const promo = promotions.find((p) => p.razorpayOrderId === razorpay_order_id);
+    if (!promo) {
+      res.status(404).json({ message: "Promotion record not found." });
+      return;
+    }
+    const product = products.find((p) => p._id === promo.productId);
+    if (!product) {
+      res.status(404).json({ message: "Product not found for promotion." });
+      return;
+    }
+    promo.status = "paid";
+    product.promoted = true;
+    product.promotionBid = promo.amount;
+    product.promotedUntil = new Date(Date.now() + promo.days * 24 * 60 * 60 * 1000).toISOString();
+    await persistProducts();
+    res.json({ success: true, product });
   });
 
   app.get("/api/admin/notifications", requireAdmin, (_req, res) => {
