@@ -40,6 +40,7 @@ export interface User {
   _id: string;
   name: string;
   email: string;
+  sellerId?: string;
   avatar?: string;
   phone?: string;
   role: "user" | "seller" | "admin";

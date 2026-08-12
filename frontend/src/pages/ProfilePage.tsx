@@ -8,7 +8,7 @@ import { apiFetch, assetUrl } from '../config';
 
 type AuthMode = 'login' | 'register';
 
-const emptyCredentials = { name: '', email: '', password: '', phone: '' };
+const emptyCredentials = { name: '', email: '', sellerId: '', businessName: '', city: '', password: '', phone: '', termsAccepted: false };
 
 export function ProfilePage() {
   const navigate = useNavigate();
@@ -83,7 +83,7 @@ export function ProfilePage() {
         throw new Error('Invalid phone number format.');
       }
       const payload = mode === 'register'
-        ? { name: credentials.name, email: credentials.email, password: credentials.password, phone }
+        ? { ...credentials, phone }
         : { email: credentials.email, password: credentials.password };
 
       const data = await apiFetch<{ token?: string; user?: AppUser; message?: string }>(endpoint, {
@@ -98,12 +98,16 @@ export function ProfilePage() {
 
       setAuthSession(data.user, data.token);
       setCredentials(emptyCredentials);
-      setMessage(mode === 'register' ? 'Account created successfully.' : 'Welcome back.');
+      setMessage(mode === 'register' ? (registerAsSeller ? 'Seller application submitted. Admin approval ke baad aapke Seller ID se panel open hoga.' : 'Account created successfully.') : 'Welcome back.');
       setMode('login');
       const orderData = await apiFetch<OrderHistoryItem[]>('/api/orders/me', {
         headers: { Authorization: `Bearer ${data.token}` },
       });
       setOrders(orderData);
+      if (mode === 'register' && registerAsSeller) {
+        clearAuthSession();
+        setRegisterAsSeller(false);
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Login/register nahi ho paya.');
     } finally {
@@ -204,13 +208,21 @@ export function ProfilePage() {
                   required
                   value={credentials.email}
                   onChange={(event) => updateField('email', event.target.value)}
-                  placeholder="Email address"
-                  type="email"
+                  placeholder={mode === 'register' && registerAsSeller ? 'Email address (for account recovery)' : 'Email address or Seller ID'}
+                  type={mode === 'register' ? 'email' : 'text'}
                   className="h-12 w-full rounded-xl border border-gray-200 px-3 outline-none focus:border-black"
                 />
                 {mode === 'register' && (
                   <>
+                    {registerAsSeller && (
+                      <>
+                        <input required value={credentials.businessName} onChange={(event) => updateField('businessName', event.target.value)} placeholder="Business / store name" minLength={3} className="h-12 w-full rounded-xl border border-gray-200 px-3 outline-none focus:border-black" />
+                        <input required value={credentials.city} onChange={(event) => updateField('city', event.target.value)} placeholder="City" minLength={2} className="h-12 w-full rounded-xl border border-gray-200 px-3 outline-none focus:border-black" />
+                        <input required value={credentials.sellerId} onChange={(event) => updateField('sellerId', event.target.value.toLowerCase())} placeholder="Choose your Seller ID (e.g. myshop)" minLength={3} maxLength={32} pattern="[a-zA-Z0-9._-]+" className="h-12 w-full rounded-xl border border-gray-200 px-3 outline-none focus:border-black" />
+                      </>
+                    )}
                     <input
+                      required={registerAsSeller}
                       value={credentials.phone}
                       onChange={(event) => updateField('phone', event.target.value)}
                       placeholder="Phone (optional, e.g. +919876543210)"
@@ -224,15 +236,22 @@ export function ProfilePage() {
                         onChange={(event) => setRegisterAsSeller(event.target.checked)}
                         className="h-4 w-4 rounded border-gray-300 text-pink-500 focus:ring-pink-500"
                       />
-                      Register as seller (personal admin panel access)
+                      Create my seller panel — choose my own Seller ID and password
                     </label>
+                    {registerAsSeller && (
+                      <label className="flex items-start gap-2 text-sm text-gray-600">
+                        <input type="checkbox" checked={credentials.termsAccepted} onChange={(event) => setCredentials((current) => ({ ...current, termsAccepted: event.target.checked }))} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-pink-500 focus:ring-pink-500" />
+                        <span>I confirm these business details are correct and agree to seller review.</span>
+                      </label>
+                    )}
                   </>
                 )}
                 <input
                   required
                   value={credentials.password}
                   onChange={(event) => updateField('password', event.target.value)}
-                  placeholder="Password"
+                  placeholder={registerAsSeller ? 'Password (minimum 8 characters)' : 'Password'}
+                  minLength={registerAsSeller ? 8 : 6}
                   type="password"
                   className="h-12 w-full rounded-xl border border-gray-200 px-3 outline-none focus:border-black"
                 />
@@ -329,7 +348,7 @@ export function ProfilePage() {
             {user ? (
               <div className="mt-3 space-y-3">
                 <Link to="/admin" className="flex items-center justify-between rounded-xl border border-gray-100 px-4 py-3 text-sm font-bold text-gray-900">
-                  Admin panel
+                  {user.role === 'seller' ? 'My seller panel' : 'Admin panel'}
                   <ChevronRight size={16} className="text-gray-300" />
                 </Link>
                 <button onClick={handleLogout} className="flex w-full items-center justify-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-600">

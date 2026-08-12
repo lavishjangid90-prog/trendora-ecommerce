@@ -2,6 +2,7 @@ import { Router, type RequestHandler } from "express";
 
 type AuthController = {
   register: RequestHandler;
+  registerSeller: RequestHandler;
   login: RequestHandler;
   me: RequestHandler;
   adminLogin: RequestHandler;
@@ -11,6 +12,7 @@ type AuthController = {
 export function createAuthRouter(controller: AuthController, requireCustomer: RequestHandler, requireAdmin: RequestHandler) {
   const router = Router();
   router.post("/auth/register", controller.register);
+  router.post("/auth/register-seller", controller.registerSeller);
   router.post("/auth/login", controller.login);
   router.get("/auth/me", requireCustomer, controller.me);
   router.post("/admin/login", controller.adminLogin);

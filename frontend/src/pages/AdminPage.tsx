@@ -58,6 +58,10 @@ type AdminUser = {
   createdAt: string;
   orders: number;
   spent: number;
+  sellerId?: string;
+  businessName?: string;
+  city?: string;
+  sellerApproved?: boolean;
 };
 
 type Coupon = {
@@ -224,10 +228,14 @@ export function AdminPage() {
   }), [token]);
 
   useEffect(() => {
-    if (appAuthToken && appAuthToken !== token) {
+    // A seller's normal account token is their panel token; never leave a
+    // previous browser-wide administrator token active for that seller.
+    if (currentUser?.role === 'seller' && appAuthToken !== token) {
+      setToken(appAuthToken);
+    } else if (!token && appAuthToken) {
       setToken(appAuthToken);
     }
-  }, [appAuthToken, token]);
+  }, [appAuthToken, token, currentUser?.role]);
 
   const lowStockProducts = products.filter((product) => Number(product.stock ?? 0) <= Number(product.lowStockThreshold ?? 5));
   const unreadNotificationCount = notifications.filter((item) => !item.readAt).length;
@@ -479,6 +487,15 @@ export function AdminPage() {
       method: 'PUT',
       body: JSON.stringify({ blocked: !user.blocked }),
     });
+    loadAdminData();
+  };
+
+  const approveSeller = async (user: AdminUser) => {
+    await adminFetch(`/api/admin/users/${user._id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ blocked: user.blocked, sellerApproved: true }),
+    });
+    setMessage(`${user.name} ka seller panel approve ho gaya.`);
     loadAdminData();
   };
 
@@ -855,11 +872,13 @@ export function AdminPage() {
                     <div>
                       <p className="font-black">{user.name}</p>
                       <p className="text-sm text-gray-500">{user.email} · {user.role}</p>
+                      {user.role === 'seller' && <p className="text-xs text-gray-400">{user.businessName || 'Seller'} · {user.city || 'City'} · ID: {user.sellerId || '—'}</p>}
                       <p className="text-xs text-gray-400">{user.orders} orders · ₹{Math.round(user.spent)} spent</p>
                     </div>
                     <button onClick={() => toggleUserBlock(user)} className={`rounded-full px-4 py-2 text-sm font-bold ${user.blocked ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
                       {user.blocked ? 'Unblock User' : 'Block User'}
                     </button>
+                    {user.role === 'seller' && user.sellerApproved === false && <button onClick={() => approveSeller(user)} className="rounded-full bg-green-600 px-4 py-2 text-sm font-bold text-white">Approve seller</button>}
                   </div>
                 ))}
               </div>

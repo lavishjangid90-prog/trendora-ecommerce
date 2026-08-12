@@ -9,6 +9,12 @@ export function createAuthController(service: AuthService) {
     res.status(result.status).json(result.body);
   };
 
+  const registerSeller: RequestHandler = async (req, res) => {
+    // only allow creating a seller via a dedicated endpoint
+    const result = await (service as any).registerSeller(req.body || {});
+    res.status(result.status).json(result.body);
+  };
+
   const login: RequestHandler = async (req, res) => {
     const result = await service.login(req.body || {});
     res.status(result.status).json(result.body);
@@ -32,5 +38,5 @@ export function createAuthController(service: AuthService) {
     res.json({ authenticated: true, role: "admin" });
   };
 
-  return { register, login, me, adminLogin, adminSession };
+  return { register, registerSeller, login, me, adminLogin, adminSession };
 }

@@ -7,6 +7,11 @@ export type AccountUser = {
   _id: string;
   name: string;
   email: string;
+  /** A seller-owned login ID, separate from the platform administrator credentials. */
+  sellerId?: string;
+  businessName?: string;
+  city?: string;
+  sellerApproved?: boolean;
   passwordHash?: string;
   phone?: string;
   role: "user" | "seller" | "admin" | "manager";
@@ -43,19 +48,29 @@ export function createAuthService(options: AuthOptions) {
   async function registerSeller(input: Record<string, unknown>) {
     const name = String(input.name || "").trim();
     const email = String(input.email || "").trim().toLowerCase();
+    const sellerId = String(input.sellerId || "").trim().toLowerCase();
+    const businessName = String(input.businessName || "").trim();
+    const city = String(input.city || "").trim();
+    const phone = String(input.phone || "").trim();
+    const termsAccepted = input.termsAccepted === true;
     const password = String(input.password || "");
 
-    if (!name || !email || password.length < 6) {
-      return { status: 400, body: { message: "Name, email and a 6+ character password are required." } };
+    if (!name || !email || !sellerId || !businessName || businessName.length < 3 || !city || city.length < 2 || !/^[+\d][\d\s-]{6,20}$/.test(phone) || !termsAccepted || !/^[a-z0-9][a-z0-9._-]{2,31}$/.test(sellerId) || password.length < 8) {
+      return { status: 400, body: { message: "Seller application needs a valid business name, city, phone, Seller ID (3-32 characters), 8+ character password, and terms acceptance." } };
     }
-    if (options.users.some((user) => user.email.toLowerCase() === email)) {
-      return { status: 409, body: { message: "Email already registered." } };
+    if (options.users.some((user) => user.email.toLowerCase() === email || user.sellerId === sellerId)) {
+      return { status: 409, body: { message: "Email or seller ID already registered." } };
     }
 
     const user: AccountUser = {
       _id: `u_${randomUUID()}`,
       name,
       email,
+      sellerId,
+      businessName,
+      city,
+      phone,
+      sellerApproved: false,
       passwordHash: await bcrypt.hash(password, 10),
       role: "seller",
       blocked: false,
@@ -116,13 +131,16 @@ export function createAuthService(options: AuthOptions) {
   async function login(input: Record<string, unknown>) {
     const email = String(input.email || "").trim().toLowerCase();
     const password = String(input.password || "");
-    const user = options.users.find((entry) => entry.email.toLowerCase() === email);
+    const user = options.users.find((entry) => entry.email.toLowerCase() === email || entry.sellerId === email);
 
     if (!user || !user.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
       return { status: 401, body: { message: "Invalid email or password." } };
     }
     if (user.blocked) {
       return { status: 403, body: { message: "Account blocked. Support se contact karo." } };
+    }
+    if (user.role === "seller" && user.sellerApproved === false) {
+      return { status: 403, body: { message: "Your seller application is pending admin approval." } };
     }
     return { status: 200, body: { token: makeAuthToken(user), user: getPublicUser(user) } };
   }
@@ -145,5 +163,5 @@ export function createAuthService(options: AuthOptions) {
     };
   }
 
-  return { getPublicUser, getRequestUser, register, login, adminLogin };
+  return { getPublicUser, getRequestUser, register, registerSeller, login, adminLogin };
 }

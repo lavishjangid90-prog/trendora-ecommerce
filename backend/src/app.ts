@@ -139,6 +139,11 @@ type Product = (typeof MOCK_PRODUCTS)[number] & {
   keywords?: string[];
   seoTitle?: string;
   seoDescription?: string;
+  sellerId?: string;
+  sellerName?: string;
+  promoted?: boolean;
+  promotedUntil?: string;
+  promotionBid?: number;
 };
 type OrderRecord = {
   _id: string;
@@ -845,13 +850,6 @@ export async function startServer() {
   app.use("/api", createProductRouter(createProductController(products, banners)));
   app.use("/api", createAuthRouter(authController, requireCustomer, requireAdmin));
 
-  // Seller registration endpoint (creates a user with role 'seller')
-  app.post("/api/auth/register-seller", async (req, res) => {
-    // For production, add additional vetting/verification before granting seller role
-    const result = await (authController as any).registerSeller(req, res as any);
-    // controller already sends response; nothing further required here
-  });
-
   // Conditional DB Connection
   let isDbConnected = false;
 
@@ -1286,6 +1284,17 @@ export async function startServer() {
     },
   );
 
+  // A seller only ever receives the products they own. Global administrators
+  // continue to see the complete catalogue.
+  app.get("/api/admin/products", requireAdmin, (req, res) => {
+    const requester = authService.getRequestUser(req as any);
+    if (requester?.role === "seller") {
+      res.json(products.filter((product) => product.sellerId === requester._id));
+      return;
+    }
+    res.json(products);
+  });
+
   app.get("/api/admin/dashboard", requireAdmin, (_req, res) => {
     // Scope dashboard to seller when a seller is authenticated via token
     syncAdminNotifications();
@@ -1341,13 +1350,13 @@ export async function startServer() {
       },
       notificationSummary: {
         total: scopeNotifications.length,
-        unread: scopeNotifications.filter((item) => !item.readAt).length,}
+        unread: scopeNotifications.filter((item) => !item.readAt).length,
       },
-      revenueSeries: orders.slice(0, 7).reverse().map((order, index) => ({
+      revenueSeries: scopeOrders.slice(0, 7).reverse().map((order, index) => ({
         label: `Day ${index + 1}`,
         value: Math.round(order.amount / 100),
       })),
-      userGrowth: users.map((user, index) => ({ label: `User ${index + 1}`, value: index + 1 })),
+      userGrowth: scopeUsers.map((user, index) => ({ label: `User ${index + 1}`, value: index + 1 })),
       bestSellers: Array.from(productSales.values()).sort((a, b) => b.qty - a.qty).slice(0, 5),
       trafficSources: [
         { label: "Direct", value: 46 },
@@ -1357,10 +1366,14 @@ export async function startServer() {
     });
   });
 
-  // Seller product upload - any authenticated user can upload products as a seller
+  // Product ownership starts with the authenticated seller account.
   app.post("/api/products", requireCustomer, async (req, res) => {
     try {
       const customer = (req as express.Request & { customer?: any }).customer;
+      if (customer.role !== "seller" && customer.role !== "admin" && customer.role !== "manager") {
+        res.status(403).json({ message: "Create a seller panel before adding products." });
+        return;
+      }
       const payload = buildProductPayload(req.body || {});
       payload._id = String(payload._id || `p${Date.now()}${Math.floor(Math.random() * 1000)}`);
       payload.sellerId = customer._id;
@@ -1769,10 +1782,19 @@ export async function startServer() {
   });
 
   app.get("/api/admin/users", requireAdmin, (_req, res) => {
-    res.json(users.map(getPublicUser));
+    const requester = authService.getRequestUser(_req as any);
+    if (requester?.role === "seller") {
+      res.status(403).json({ message: "Seller panels cannot access customer accounts." });
+      return;
+    }
+    res.json(users.map(authService.getPublicUser));
   });
 
   app.put("/api/admin/users/:id", requireAdmin, (req, res) => {
+    if (authService.getRequestUser(req as any)?.role === "seller") {
+      res.status(403).json({ message: "Seller panels cannot manage customer accounts." });
+      return;
+    }
     const user = users.find((item) => item._id === req.params.id);
     if (!user) {
       res.status(404).json({ message: "User not found." });
@@ -1780,15 +1802,26 @@ export async function startServer() {
     }
 
     user.blocked = Boolean(req.body.blocked);
+    if (user.role === "seller" && typeof req.body.sellerApproved === "boolean") {
+      user.sellerApproved = req.body.sellerApproved;
+    }
     persistUsers().catch((err) => console.error("User save error:", err));
-    res.json(getPublicUser(user));
+    res.json(authService.getPublicUser(user));
   });
 
   app.get("/api/admin/coupons", requireAdmin, (_req, res) => {
+    if (authService.getRequestUser(_req as any)?.role === "seller") {
+      res.status(403).json({ message: "Seller panels cannot manage global coupons." });
+      return;
+    }
     res.json(coupons);
   });
 
   app.post("/api/admin/coupons", requireAdmin, (req, res) => {
+    if (authService.getRequestUser(req as any)?.role === "seller") {
+      res.status(403).json({ message: "Seller panels cannot manage global coupons." });
+      return;
+    }
     if (!req.body.code || !req.body.discountValue || !req.body.expiresAt) {
       res.status(400).json({ message: "Code, discount value and expiry are required." });
       return;
@@ -1810,6 +1843,10 @@ export async function startServer() {
   });
 
   app.put("/api/admin/coupons/:id", requireAdmin, (req, res) => {
+    if (authService.getRequestUser(req as any)?.role === "seller") {
+      res.status(403).json({ message: "Seller panels cannot manage global coupons." });
+      return;
+    }
     const coupon = coupons.find((item) => item._id === req.params.id);
     if (!coupon) {
       res.status(404).json({ message: "Coupon not found." });
@@ -1824,6 +1861,10 @@ export async function startServer() {
   });
 
   app.delete("/api/admin/coupons/:id", requireAdmin, (req, res) => {
+    if (authService.getRequestUser(req as any)?.role === "seller") {
+      res.status(403).json({ message: "Seller panels cannot manage global coupons." });
+      return;
+    }
     const index = coupons.findIndex((item) => item._id === req.params.id);
     if (index === -1) {
       res.status(404).json({ message: "Coupon not found." });
@@ -1836,10 +1877,18 @@ export async function startServer() {
   });
 
   app.get("/api/admin/banners", requireAdmin, (_req, res) => {
+    if (authService.getRequestUser(_req as any)?.role === "seller") {
+      res.status(403).json({ message: "Seller panels cannot manage global banners." });
+      return;
+    }
     res.json(banners);
   });
 
   app.post("/api/admin/banners", requireAdmin, (req, res) => {
+    if (authService.getRequestUser(req as any)?.role === "seller") {
+      res.status(403).json({ message: "Seller panels cannot manage global banners." });
+      return;
+    }
     if (!req.body.title || !req.body.image) {
       res.status(400).json({ message: "Banner title and image are required." });
       return;
@@ -1860,6 +1909,10 @@ export async function startServer() {
   });
 
   app.put("/api/admin/banners/:id", requireAdmin, (req, res) => {
+    if (authService.getRequestUser(req as any)?.role === "seller") {
+      res.status(403).json({ message: "Seller panels cannot manage global banners." });
+      return;
+    }
     const banner = banners.find((item) => item._id === req.params.id);
     if (!banner) {
       res.status(404).json({ message: "Banner not found." });
@@ -1877,6 +1930,10 @@ export async function startServer() {
   });
 
   app.delete("/api/admin/banners/:id", requireAdmin, (req, res) => {
+    if (authService.getRequestUser(req as any)?.role === "seller") {
+      res.status(403).json({ message: "Seller panels cannot manage global banners." });
+      return;
+    }
     const index = banners.findIndex((item) => item._id === req.params.id);
     if (index === -1) {
       res.status(404).json({ message: "Banner not found." });
