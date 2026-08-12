@@ -14,6 +14,7 @@ const CategoriesPage = lazy(() => import('./pages/CategoriesPage').then((module)
 const CheckoutPage = lazy(() => import('./pages/CheckoutPage').then((module) => ({ default: module.CheckoutPage })));
 const AdminPage = lazy(() => import('./pages/AdminPage').then((module) => ({ default: module.AdminPage })));
 const OrderDetailsPage = lazy(() => import('./pages/OrderDetailsPage').then((module) => ({ default: module.OrderDetailsPage })));
+const SellerPortalPage = lazy(() => import('./pages/SellerPortalPage').then((module) => ({ default: module.SellerPortalPage })));
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -27,6 +28,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="checkout" element={<CheckoutPage />} />
             <Route path="orders/:id" element={<OrderDetailsPage />} />
             <Route path="profile" element={<ProfilePage />} />
+            <Route path="seller" element={<SellerPortalPage />} />
             <Route path="wishlist" element={<WishlistPage />} />
             <Route path="search" element={<SearchPage />} />
             <Route path="categories" element={<CategoriesPage />} />

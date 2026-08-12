@@ -8,7 +8,7 @@ import { apiFetch, assetUrl } from '../config';
 
 type AuthMode = 'login' | 'register';
 
-const emptyCredentials = { name: '', email: '', sellerId: '', businessName: '', city: '', password: '', phone: '', termsAccepted: false };
+const emptyCredentials = { name: '', email: '', password: '', phone: '' };
 
 export function ProfilePage() {
   const navigate = useNavigate();
@@ -18,8 +18,8 @@ export function ProfilePage() {
   const clearAuthSession = useStore((state) => state.clearAuthSession);
 
   const [mode, setMode] = useState<AuthMode>('login');
-  const [registerAsSeller, setRegisterAsSeller] = useState(false);
   const [credentials, setCredentials] = useState(emptyCredentials);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(Boolean(authToken));
   const [message, setMessage] = useState('');
@@ -69,15 +69,28 @@ export function ProfilePage() {
     setCredentials((current) => ({ ...current, [key]: value }));
   };
 
+  const uploadAvatar = async (file: File) => {
+    if (!authToken) return;
+    try {
+      const data = await apiFetch<{ user: AppUser }>('/api/auth/avatar', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': file.type },
+        body: file,
+      });
+      setAuthSession(data.user, authToken);
+      setMessage('Profile photo updated.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Photo upload nahi ho payi.');
+    }
+  };
+
   const handleAuthSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoading(true);
     setMessage('');
 
     try {
-      const endpoint = mode === 'register'
-        ? (registerAsSeller ? '/api/auth/register-seller' : '/api/auth/register')
-        : '/api/auth/login';
+      const endpoint = mode === 'register' ? '/api/auth/register' : '/api/auth/login';
       const phone = credentials.phone?.trim() || undefined;
       if (mode === 'register' && phone && !/^[+\d][\d\s-]{6,20}$/.test(phone)) {
         throw new Error('Invalid phone number format.');
@@ -98,16 +111,21 @@ export function ProfilePage() {
 
       setAuthSession(data.user, data.token);
       setCredentials(emptyCredentials);
-      setMessage(mode === 'register' ? (registerAsSeller ? 'Seller application submitted. Admin approval ke baad aapke Seller ID se panel open hoga.' : 'Account created successfully.') : 'Welcome back.');
+      if (mode === 'register' && avatarFile) {
+        const photoData = await apiFetch<{ user: AppUser }>('/api/auth/avatar', {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${data.token}`, 'Content-Type': avatarFile.type },
+          body: avatarFile,
+        });
+        setAuthSession(photoData.user, data.token);
+      }
+      setAvatarFile(null);
+      setMessage(mode === 'register' ? 'Customer account created successfully.' : 'Welcome back.');
       setMode('login');
       const orderData = await apiFetch<OrderHistoryItem[]>('/api/orders/me', {
         headers: { Authorization: `Bearer ${data.token}` },
       });
       setOrders(orderData);
-      if (mode === 'register' && registerAsSeller) {
-        clearAuthSession();
-        setRegisterAsSeller(false);
-      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Login/register nahi ho paya.');
     } finally {
@@ -150,13 +168,14 @@ export function ProfilePage() {
           {user ? (
             <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
               <div className="flex items-center gap-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-black text-white">
+                <label className="flex h-14 w-14 cursor-pointer items-center justify-center rounded-2xl bg-black text-white" title="Change profile photo">
                   {user.avatar ? (
                     <img src={assetUrl(user.avatar)} alt={user.name} className="h-full w-full rounded-2xl object-cover" />
                   ) : (
                     <CircleUserRound size={28} />
                   )}
-                </div>
+                  <input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadAvatar(file); event.currentTarget.value = ''; }} />
+                </label>
                 <div>
                   <h2 className="text-lg font-black text-gray-900">{user.name}</h2>
                   <p className="text-sm text-gray-500">{user.email}</p>
@@ -208,50 +227,30 @@ export function ProfilePage() {
                   required
                   value={credentials.email}
                   onChange={(event) => updateField('email', event.target.value)}
-                  placeholder={mode === 'register' && registerAsSeller ? 'Email address (for account recovery)' : 'Email address or Seller ID'}
-                  type={mode === 'register' ? 'email' : 'text'}
+                  placeholder="Email address"
+                  type="email"
                   className="h-12 w-full rounded-xl border border-gray-200 px-3 outline-none focus:border-black"
                 />
                 {mode === 'register' && (
                   <>
-                    {registerAsSeller && (
-                      <>
-                        <input required value={credentials.businessName} onChange={(event) => updateField('businessName', event.target.value)} placeholder="Business / store name" minLength={3} className="h-12 w-full rounded-xl border border-gray-200 px-3 outline-none focus:border-black" />
-                        <input required value={credentials.city} onChange={(event) => updateField('city', event.target.value)} placeholder="City" minLength={2} className="h-12 w-full rounded-xl border border-gray-200 px-3 outline-none focus:border-black" />
-                        <input required value={credentials.sellerId} onChange={(event) => updateField('sellerId', event.target.value.toLowerCase())} placeholder="Choose your Seller ID (e.g. myshop)" minLength={3} maxLength={32} pattern="[a-zA-Z0-9._-]+" className="h-12 w-full rounded-xl border border-gray-200 px-3 outline-none focus:border-black" />
-                      </>
-                    )}
                     <input
-                      required={registerAsSeller}
                       value={credentials.phone}
                       onChange={(event) => updateField('phone', event.target.value)}
                       placeholder="Phone (optional, e.g. +919876543210)"
                       type="tel"
                       className="h-12 w-full rounded-xl border border-gray-200 px-3 outline-none focus:border-black"
                     />
-                    <label className="mt-2 flex items-center gap-2 text-sm text-gray-600">
-                      <input
-                        type="checkbox"
-                        checked={registerAsSeller}
-                        onChange={(event) => setRegisterAsSeller(event.target.checked)}
-                        className="h-4 w-4 rounded border-gray-300 text-pink-500 focus:ring-pink-500"
-                      />
-                      Create my seller panel — choose my own Seller ID and password
+                    <label className="block text-sm font-semibold text-gray-600">Profile photo <span className="font-normal text-gray-400">(optional)</span>
+                      <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => setAvatarFile(event.target.files?.[0] || null)} className="mt-1 block w-full text-sm font-normal" />
                     </label>
-                    {registerAsSeller && (
-                      <label className="flex items-start gap-2 text-sm text-gray-600">
-                        <input type="checkbox" checked={credentials.termsAccepted} onChange={(event) => setCredentials((current) => ({ ...current, termsAccepted: event.target.checked }))} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-pink-500 focus:ring-pink-500" />
-                        <span>I confirm these business details are correct and agree to seller review.</span>
-                      </label>
-                    )}
                   </>
                 )}
                 <input
                   required
                   value={credentials.password}
                   onChange={(event) => updateField('password', event.target.value)}
-                  placeholder={registerAsSeller ? 'Password (minimum 8 characters)' : 'Password'}
-                  minLength={registerAsSeller ? 8 : 6}
+                  placeholder="Password (minimum 6 characters)"
+                  minLength={6}
                   type="password"
                   className="h-12 w-full rounded-xl border border-gray-200 px-3 outline-none focus:border-black"
                 />
@@ -347,8 +346,8 @@ export function ProfilePage() {
             <p className="text-xs font-black uppercase tracking-[0.2em] text-gray-400">Account actions</p>
             {user ? (
               <div className="mt-3 space-y-3">
-                <Link to="/admin" className="flex items-center justify-between rounded-xl border border-gray-100 px-4 py-3 text-sm font-bold text-gray-900">
-                  {user.role === 'seller' ? 'My seller panel' : 'Admin panel'}
+                <Link to={user.role === 'seller' ? '/admin' : '/seller'} className="flex items-center justify-between rounded-xl border border-gray-100 px-4 py-3 text-sm font-bold text-gray-900">
+                  {user.role === 'seller' ? 'My seller panel' : 'Seller Portal'}
                   <ChevronRight size={16} className="text-gray-300" />
                 </Link>
                 <button onClick={handleLogout} className="flex w-full items-center justify-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-600">

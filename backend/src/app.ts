@@ -850,6 +850,33 @@ export async function startServer() {
   app.use("/api", createProductRouter(createProductController(products, banners)));
   app.use("/api", createAuthRouter(authController, requireCustomer, requireAdmin));
 
+  // Profile photo is optional at registration and can be added or changed later.
+  app.put(
+    "/api/auth/avatar",
+    requireCustomer,
+    express.raw({ type: ["image/jpeg", "image/png", "image/webp", "image/gif"], limit: "5mb" }),
+    async (req, res) => {
+      if (!Buffer.isBuffer(req.body) || !req.body.length) {
+        res.status(400).json({ message: "Please choose an image file." });
+        return;
+      }
+      const mimeToExt: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif" };
+      const mime = String(req.header("content-type") || "").split(";")[0];
+      const ext = mimeToExt[mime];
+      if (!ext) {
+        res.status(400).json({ message: "Only JPG, PNG, WEBP, or GIF images are allowed." });
+        return;
+      }
+      const customer = (req as express.Request & { customer?: AccountUser }).customer!;
+      const filename = `${randomUUID()}.${ext}`;
+      await fs.mkdir(uploadsDir, { recursive: true });
+      await fs.writeFile(path.join(uploadsDir, filename), req.body);
+      customer.avatar = `/uploads/${filename}`;
+      await persistUsers();
+      res.json({ user: authService.getPublicUser(customer) });
+    },
+  );
+
   // Conditional DB Connection
   let isDbConnected = false;
 

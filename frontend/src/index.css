@@ -1,6 +1,17 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:wght@400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
 
+.field {
+  height: 3rem;
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid #e5e7eb;
+  padding: 0 0.75rem;
+  outline: none;
+}
+
+.field:focus { border-color: #000; }
+
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Playfair Display", ui-serif, Georgia, serif;
@@ -41,4 +52,3 @@ body,
 .pt-safe {
   padding-top: env(safe-area-inset-top);
 }
-

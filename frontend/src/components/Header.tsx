@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Home, Heart, LayoutGrid, LogOut, Menu, Search, ShoppingBag, User, X } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { assetUrl } from '../config';
 import { cn } from '../lib/utils';
 
 export function Header() {
@@ -11,6 +12,7 @@ export function Header() {
 
   const cartItemsCount = useStore((state) => state.cartTotalHours());
   const authToken = useStore((state) => state.authToken);
+  const user = useStore((state) => state.user);
   const clearAuthSession = useStore((state) => state.clearAuthSession);
 
   useEffect(() => {
@@ -48,6 +50,7 @@ export function Header() {
     { icon: Heart, label: 'Wishlist', path: '/wishlist' },
     { icon: ShoppingBag, label: 'Cart', path: '/cart', showBadge: true },
     { icon: User, label: 'Profile', path: '/profile' },
+    { icon: ShoppingBag, label: 'Seller Portal', path: '/seller' },
   ];
 
   return (
@@ -125,6 +128,13 @@ export function Header() {
               Search products, brands...
             </Link>
           </div>
+
+          {user && (
+            <Link to="/profile" onClick={closeMenu} className="mx-3 mt-3 flex items-center gap-3 rounded-2xl bg-pink-50 p-3">
+              {user.avatar ? <img src={assetUrl(user.avatar)} alt={user.name} className="h-11 w-11 rounded-full object-cover" /> : <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#55205f] font-black text-white">{user.name.slice(0, 1).toUpperCase()}</span>}
+              <span className="min-w-0"><span className="block truncate text-sm font-black text-gray-900">{user.name}</span><span className="block truncate text-xs text-gray-500">{user.email}</span></span>
+            </Link>
+          )}
 
           <nav className="flex-1 px-3 py-3">
             <div className="space-y-2">
