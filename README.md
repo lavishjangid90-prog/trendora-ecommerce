@@ -76,3 +76,7 @@ If your host does not use `render.yaml`, use these settings:
 - Do not commit `.env.local` or any duplicate `.env*` file with real values.
 - Allow your deployment host to access MongoDB Atlas in Network Access.
 - Use Razorpay live keys for real payments.
+
+### Environment: `ALLOWED_SITES`
+
+- **`ALLOWED_SITES`**: Optional comma-separated list of allowed site origins that can access the backend API (example: `https://example.com,http://localhost:5173`). The backend reads this value from `backend/.env.local` as `ALLOWED_SITES` and exposes it via the config for use in CORS or access checks.

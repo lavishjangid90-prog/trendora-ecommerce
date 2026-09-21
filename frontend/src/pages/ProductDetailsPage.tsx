@@ -32,7 +32,8 @@ export function ProductDetailsPage() {
   useEffect(() => {
     if (!id) return;
 
-    apiFetch<Product>(`/api/products/${id}`)
+    const location = new URLSearchParams({ pincode: localStorage.getItem('trendora-pincode') || '', city: localStorage.getItem('trendora-city') || '', state: localStorage.getItem('trendora-state') || '' });
+    apiFetch<Product>(`/api/products/${id}?${location}`)
       .then(data => {
         setProduct(data);
         if (data.sizes?.length) setSelectedSize(data.sizes[0]);
@@ -195,8 +196,8 @@ export function ProductDetailsPage() {
            <div className="flex gap-3 text-sm text-gray-600 bg-gray-50 p-4 rounded-xl border border-gray-100">
              <Truck size={20} className="shrink-0 text-black" />
              <div>
-               <p className="font-semibold text-gray-900 mb-1">Get it by Tomorrow</p>
-               <p className="text-xs">Pay on delivery available.</p>
+               <p className="font-semibold text-gray-900 mb-1">{product.estimatedDelivery ? `Estimated delivery: ${product.estimatedDelivery}` : 'Estimated delivery shown at checkout'}</p>
+               <p className="text-xs">{product.fulfillmentCity ? `${product.isLocal ? 'Near you · ' : ''}${product.fulfillmentCity} seller. ` : ''}Pay on delivery available where supported.</p>
              </div>
            </div>
         </div>

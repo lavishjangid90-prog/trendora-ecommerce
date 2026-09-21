@@ -5,11 +5,12 @@ import mongoose from "mongoose";
 import { createServer as createViteServer } from "vite";
 import Razorpay from "razorpay";
 import nodemailer from "nodemailer";
-import Twilio from "twilio";
+import twilio from "twilio";
 import { initMailer, queueEmail } from "./services/mailer";
 import { renderResetEmail, renderWelcomeEmail } from "./emails/templates";
 import fs from "fs/promises";
 import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import { createHmac, randomUUID } from "crypto";
 import { GoogleGenAI } from "@google/genai";
 import { backendDir, dataFiles, environment, envPath, frontendDist, paths } from "./config/environment";
@@ -22,12 +23,17 @@ import { normalizeProductCode } from "./utils/product-code";
 import { createProductController } from "./controllers/product.controller";
 import { createProductRouter } from "./routes/product.routes";
 import { createAuthService, type AccountUser } from "./services/auth.service";
+import { generateSellerInvitationCode, validateSellerInvitation } from "./services/seller-onboarding";
 import { createAuthController } from "./controllers/auth.controller";
 import { createAuthRouter } from "./routes/auth.routes";
+import { calculateShipping, defaultLocalCommerceConfig, estimateDelivery, isServiceable, type LocalCommerceConfig } from "./services/fulfillment.service";
 
 console.log("Backend cwd =", process.cwd());
 console.log("Backend env file =", envPath);
 console.log("MONGODB_URI loaded =", Boolean(process.env.MONGODB_URI));
+
+let userRepository: ReturnType<typeof createUserRepository<AccountUser>>;
+let authService: ReturnType<typeof createAuthService>;
 
 // Mock Data
 const MOCK_PRODUCTS = [
@@ -141,9 +147,21 @@ type Product = (typeof MOCK_PRODUCTS)[number] & {
   seoDescription?: string;
   sellerId?: string;
   sellerName?: string;
+  ownerType?: "SELLER" | "TRENDORA";
+  status?: "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | "PAUSED" | "OUT_OF_STOCK";
   promoted?: boolean;
   promotedUntil?: string;
   promotionBid?: number;
+  ownerType?: "SELLER" | "TRENDORA";
+  sellerCity?: string;
+  sellerState?: string;
+  sellerPincode?: string;
+  serviceablePincodes?: string[];
+  fulfillmentRadiusKm?: number;
+  processingDays?: number;
+  dispatchSlaHours?: number;
+  fulfillmentLocations?: Array<{ id?: string; city?: string; state?: string; pincode?: string; stock?: number; processingDays?: number; serviceablePincodes?: string[] }>;
+  sellerPerformance?: { dispatchReliability?: number; cancellationRate?: number; returnRate?: number; rtoRate?: number; complaintRate?: number; stockAccuracy?: number };
 };
 type OrderRecord = {
   _id: string;
@@ -181,7 +199,10 @@ type OrderRecord = {
   }>;
   statusHistory?: Array<{ status: string; note: string; at: string }>;
   createdAt: string;
+  fulfillment?: { estimatedDelivery?: string; local?: boolean; shipping?: { customerShipping: number; sellerShipping: number; logisticsEstimate: number; shippingMargin: number } };
 };
+type ReviewRecord = { _id: string; orderId: string; productId: string; customerId: string; rating: number; text?: string; photos?: string[]; sizeFit?: string; quality?: string; value?: string; verifiedPurchase: true; status: "PUBLISHED" | "HIDDEN"; createdAt: string };
+type ReturnRecord = { _id: string; orderId: string; productId: string; customerId: string; reason: string; status: "requested" | "approved" | "rejected" | "completed"; responsibility: "customer" | "seller" | "logistics"; localReversePickup: boolean; pickupEta?: string; createdAt: string };
 type Coupon = {
   _id: string;
   code: string;
@@ -200,6 +221,49 @@ type Banner = {
   link: string;
   placement: "homepage" | "promotional";
   active: boolean;
+};
+
+type SellerInvitation = {
+  _id: string;
+  code: string;
+  type: "seller";
+  status: "ACTIVE" | "USED" | "DISABLED" | "EXPIRED";
+  createdBy: string;
+  createdAt: string;
+  expiresAt?: string;
+  used: boolean;
+  usedBy?: string;
+  usedAt?: string;
+  notes?: string;
+  sellerId?: string;
+};
+
+type RevenueLedgerEntry = {
+  _id: string;
+  kind: "ADVERTISING" | "PROMOTED_PRODUCT" | "FEATURED_PLACEMENT" | "SELLER_SERVICE" | "TRENDORA_PRODUCT" | "SELLER_GMV" | "REFUND" | "RETURN" | "RTO";
+  source: "seller" | "trendora" | "platform";
+  amount: number;
+  currency: string;
+  sellerId?: string;
+  productId?: string;
+  orderId?: string;
+  createdAt: string;
+  note?: string;
+};
+
+type SellerCampaign = {
+  _id: string;
+  sellerId: string;
+  productId?: string;
+  title: string;
+  placement: "homepage" | "category" | "search" | "product" | "festival" | "banner" | "featured-seller";
+  status: "PENDING" | "APPROVED" | "ACTIVE" | "REJECTED" | "PAUSED" | "COMPLETED";
+  budget: number;
+  amount: number;
+  startDate: string;
+  endDate?: string;
+  createdAt: string;
+  approvedBy?: string;
 };
 
 type AdminNotification = {
@@ -242,6 +306,12 @@ const orders: OrderRecord[] = [];
 const users: AccountUser[] = [];
 const coupons: Coupon[] = [];
 const banners: Banner[] = [];
+const sellerInvitations: SellerInvitation[] = [];
+const revenueLedger: RevenueLedgerEntry[] = [];
+const sellerCampaigns: SellerCampaign[] = [];
+const reviews: ReviewRecord[] = [];
+const returns: ReturnRecord[] = [];
+let localCommerceConfig: LocalCommerceConfig = structuredClone(defaultLocalCommerceConfig);
 const notifications: AdminNotification[] = [];
 const aiAnalytics: AiAnalyticsRecord[] = [];
 const frontendRoot = paths.frontendRoot;
@@ -253,6 +323,12 @@ const usersFile = dataFiles.users;
 const couponsFile = dataFiles.coupons;
 const bannersFile = dataFiles.banners;
 const notificationsFile = dataFiles.notifications;
+const sellerInvitationsFile = dataFiles.sellerInvitations;
+const revenueLedgerFile = dataFiles.revenueLedger;
+const sellerCampaignsFile = dataFiles.sellerCampaigns;
+const reviewsFile = dataFiles.reviews;
+const returnsFile = dataFiles.returns;
+const localCommerceConfigFile = dataFiles.localCommerceConfig;
 const aiAnalyticsFile = dataFiles.aiAnalytics;
 const { adminEmail, adminPassword, jwtSecret, geminiApiKey } = environment;
 
@@ -544,6 +620,18 @@ async function persistNotifications() {
   await writeJsonFile(notificationsFile, notifications);
 }
 
+async function persistSellerInvitations() {
+  await writeJsonFile(sellerInvitationsFile, sellerInvitations);
+}
+
+async function persistRevenueLedger() {
+  await writeJsonFile(revenueLedgerFile, revenueLedger);
+}
+
+async function persistSellerCampaigns() {
+  await writeJsonFile(sellerCampaignsFile, sellerCampaigns);
+}
+
 async function persistProducts() {
   await writeJsonFile(productsFile, products.filter((item) => !MOCK_PRODUCTS.some((mock) => mock._id === item._id)));
 }
@@ -553,11 +641,16 @@ async function persistOrders() {
 }
 
 async function persistUsers() {
+  if (!userRepository) return;
   await userRepository.save(users);
 }
 
 async function persistAiAnalytics() {
   await writeJsonFile(aiAnalyticsFile, aiAnalytics);
+}
+
+async function persistLocalCommerce() {
+  await Promise.all([writeJsonFile(reviewsFile, reviews), writeJsonFile(returnsFile, returns), writeJsonFile(localCommerceConfigFile, localCommerceConfig)]);
 }
 
 async function savePaymentRecord(record: Record<string, unknown>) {
@@ -577,6 +670,73 @@ async function savePaymentRecord(record: Record<string, unknown>) {
 function parseAdminTimestamp(value: string) {
   const timestamp = new Date(value).getTime();
   return Number.isFinite(timestamp) ? timestamp : Date.now();
+}
+
+function getPublicUser(user: AccountUser) {
+  const { passwordHash, ...safeUser } = user as AccountUser & { passwordHash?: string };
+  return safeUser;
+}
+
+function makeAuthToken(user: AccountUser) {
+  const role = String(user.role || "customer");
+  const sellerStatus = user.sellerStatus || (user.sellerApproved ? "APPROVED" : "REGISTERED");
+  return jwt.sign({ sub: user._id, email: user.email, role, name: user.name, sellerStatus }, environment.jwtSecret, { expiresIn: "7d" });
+}
+
+function getRequestUser(req: express.Request) {
+  const authHeader = req.header("authorization") || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (!token) return null;
+  try {
+    const payload = jwt.verify(token, environment.jwtSecret) as { sub?: string; email?: string; role?: string };
+    const user = users.find((item) => item._id === payload.sub || item.email.toLowerCase() === String(payload.email || "").toLowerCase());
+    if (!user || user.blocked) return null;
+    return user;
+  } catch {
+    return null;
+  }
+}
+
+function generateInvitationCode() {
+  const prefix = "TRD-SELL-";
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const body = Array.from({ length: 7 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  return `${prefix}${body}`;
+}
+
+function ensureSellerRole(user: AccountUser) {
+  if (user.role !== "seller") {
+    user.role = "seller";
+  }
+  if (!user.sellerStatus) user.sellerStatus = "PENDING_REVIEW";
+  if (user.sellerApproved === undefined) user.sellerApproved = user.sellerStatus === "APPROVED";
+}
+
+function safeUserPublic(user: AccountUser) {
+  const { passwordHash, ...safe } = user as AccountUser & { passwordHash?: string };
+  return safe;
+}
+
+function toSellerDashboardSummary(requester: AccountUser) {
+  const sellerProducts = products.filter((product) => product.sellerId === requester._id);
+  const sellerProductIds = new Set(sellerProducts.map((product) => product._id));
+  const relatedOrders = orders.filter((order) => (Array.isArray(order.items) ? order.items : []).some((item) => sellerProductIds.has(String(item?.product?._id || ""))));
+  const grossSales = relatedOrders.reduce((sum, order) => {
+    const total = (Array.isArray(order.items) ? order.items : []).reduce((orderSum, item) => {
+      if (!sellerProductIds.has(String(item?.product?._id || ""))) return orderSum;
+      return orderSum + Number(item?.product?.price || 0) * Number(item?.quantity || 0);
+    }, 0);
+    return sum + total;
+  }, 0);
+  return {
+    sellerId: requester._id,
+    sellerStatus: requester.sellerStatus || "PENDING_REVIEW",
+    approved: requester.sellerStatus === "APPROVED",
+    products: sellerProducts.length,
+    grossSales,
+    orders: relatedOrders.length,
+    pendingApprovals: sellerProducts.filter((product) => product.status === "PENDING_APPROVAL").length,
+  };
 }
 
 function ageInMinutes(value: string) {
@@ -742,6 +902,7 @@ export async function startServer() {
   const PORT = environment.port;
   const HOST = environment.host;
   const allowedOrigins = [
+    ...environment.allowedSites,
     process.env.FRONTEND_URL,
     process.env.APP_URL,
     process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "",
@@ -764,13 +925,25 @@ export async function startServer() {
   app.use(express.json({ limit: "12mb" }));
   app.use("/uploads", express.static(uploadsDir));
 
+  userRepository = createUserRepository<AccountUser>(dataDir, usersFile);
+
   const savedProducts = await readJsonFile<Product[]>(productsFile, []);
   const savedOrders = await readJsonFile<OrderRecord[]>(ordersFile, []);
   const savedUsers = await userRepository.load([]);
   const savedCoupons = await readJsonFile<Coupon[]>(couponsFile, []);
   const savedBanners = await readJsonFile<Banner[]>(bannersFile, []);
+  const savedSellerInvitations = await readJsonFile<SellerInvitation[]>(sellerInvitationsFile, []);
   const savedNotifications = await readJsonFile<AdminNotification[]>(notificationsFile, []);
   const savedAiAnalytics = await readJsonFile<AiAnalyticsRecord[]>(aiAnalyticsFile, []);
+  const savedReviews = await readJsonFile<ReviewRecord[]>(reviewsFile, []);
+  const savedReturns = await readJsonFile<ReturnRecord[]>(returnsFile, []);
+  const savedLocalCommerceConfig = await readJsonFile<Partial<LocalCommerceConfig>>(localCommerceConfigFile, {});
+  localCommerceConfig = {
+    ...structuredClone(defaultLocalCommerceConfig), ...savedLocalCommerceConfig,
+    ranking: { ...defaultLocalCommerceConfig.ranking, ...(savedLocalCommerceConfig.ranking || {}) },
+    shipping: { ...defaultLocalCommerceConfig.shipping, ...(savedLocalCommerceConfig.shipping || {}), returnPolicies: { ...defaultLocalCommerceConfig.shipping.returnPolicies, ...(savedLocalCommerceConfig.shipping?.returnPolicies || {}) } },
+    ai: { ...defaultLocalCommerceConfig.ai, ...(savedLocalCommerceConfig.ai || {}) },
+  };
   products.splice(0, products.length, ...MOCK_PRODUCTS, ...savedProducts);
   products.forEach((product) => {
     product.code ||= generateProductCode(product.category);
@@ -781,6 +954,8 @@ export async function startServer() {
   });
   orders.splice(0, orders.length, ...savedOrders);
   aiAnalytics.splice(0, aiAnalytics.length, ...savedAiAnalytics);
+  reviews.splice(0, reviews.length, ...savedReviews);
+  returns.splice(0, returns.length, ...savedReturns);
   const fallbackUsers: AccountUser[] = [
     {
       _id: "u_demo_1",
@@ -795,6 +970,7 @@ export async function startServer() {
     },
   ];
   users.splice(0, users.length, ...(savedUsers.length ? savedUsers : fallbackUsers));
+  sellerInvitations.splice(0, sellerInvitations.length, ...savedSellerInvitations);
   coupons.splice(0, coupons.length, ...savedCoupons);
   const fallbackBanners: Banner[] = [
     {
@@ -812,9 +988,9 @@ export async function startServer() {
   syncAdminNotifications();
   await persistNotifications().catch((err) => console.error("Notification save error:", err));
 
-  const authService = createAuthService({ users, jwtSecret, adminEmail, adminPassword, persistUsers });
+  authService = createAuthService({ users, sellerInvitations, jwtSecret, adminEmail, adminPassword, persistUsers, onboardingMode: environment.sellerOnboardingMode });
   const requireAdmin = createAdminMiddleware(adminPassword, jwtSecret);
-  const requireCustomer = createCustomerAuthMiddleware(authService.getRequestUser);
+  const requireCustomer = createCustomerAuthMiddleware(getRequestUser);
   const authController = createAuthController(authService);
   
     // Mailer setup if configured
@@ -832,7 +1008,7 @@ export async function startServer() {
 
     // Twilio client if configured
     const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
-      ? new Twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+      ? new twilio.Twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
       : null;
 
     type PromotionRecord = {
@@ -847,8 +1023,117 @@ export async function startServer() {
 
     const promotions: PromotionRecord[] = [];
 
-  app.use("/api", createProductRouter(createProductController(products, banners)));
+  app.use("/api", createProductRouter(createProductController(products, banners, { getConfig: () => localCommerceConfig })));
   app.use("/api", createAuthRouter(authController, requireCustomer, requireAdmin));
+
+  app.get("/api/fulfillment/config", (_req, res) => res.json({ shipping: localCommerceConfig.shipping, ai: localCommerceConfig.ai }));
+  app.post("/api/fulfillment/quote", (req, res) => {
+    const address = req.body?.address || {};
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (!String(address.pincode || "").trim() || !items.length) { res.status(400).json({ message: "A delivery pincode and one or more items are required." }); return; }
+    const requested = items.map((item: any) => products.find((product) => product._id === item?.product?._id || product._id === item?.productId)).filter(Boolean) as Product[];
+    if (requested.length !== items.length) { res.status(404).json({ message: "One or more products are unavailable." }); return; }
+    const unsupported = requested.find((product) => !isServiceable(product, address));
+    if (unsupported) { res.status(422).json({ message: `${unsupported.name} cannot be delivered to this pincode.`, unsupportedProductId: unsupported._id }); return; }
+    const itemTotal = requested.reduce((sum, product, index) => sum + product.price * Math.max(1, Number(items[index]?.quantity || 1)), 0);
+    const shipping = calculateShipping(itemTotal, requested, address, localCommerceConfig);
+    res.json({ shipping, total: itemTotal + shipping.customerShipping, items: requested.map((product) => ({ productId: product._id, estimatedDelivery: estimateDelivery(product, address) })) });
+  });
+  app.put("/api/seller/fulfillment", requireCustomer, async (req, res) => {
+    const seller = (req as express.Request & { customer?: AccountUser }).customer!;
+    if (!seller || (seller.role !== "seller" && seller.role !== "admin" && seller.role !== "manager")) { res.status(403).json({ message: "Seller access is required." }); return; }
+    const body = req.body || {};
+    seller.businessAddress = String(body.businessAddress ?? seller.businessAddress ?? ""); seller.city = String(body.city ?? seller.city ?? ""); seller.state = String(body.state ?? seller.state ?? ""); seller.pincode = String(body.pincode ?? seller.pincode ?? "");
+    (seller as any).pickupAddress = String(body.pickupAddress ?? (seller as any).pickupAddress ?? seller.businessAddress ?? "");
+    (seller as any).serviceablePincodes = Array.isArray(body.serviceablePincodes) ? body.serviceablePincodes.map(String).map((value: string) => value.trim()).filter(Boolean) : (seller as any).serviceablePincodes || [];
+    (seller as any).fulfillmentRadiusKm = Math.max(0, Number(body.fulfillmentRadiusKm ?? (seller as any).fulfillmentRadiusKm ?? 0)); (seller as any).processingDays = Math.max(0, Number(body.processingDays ?? (seller as any).processingDays ?? 1)); (seller as any).dispatchSlaHours = Math.max(0, Number(body.dispatchSlaHours ?? (seller as any).dispatchSlaHours ?? 24));
+    await persistUsers(); res.json({ success: true, seller: authService.getPublicUser(seller) });
+  });
+  app.get("/api/products/:id/reviews", (req, res) => res.json(reviews.filter((review) => review.productId === req.params.id && review.status === "PUBLISHED")));
+  app.post("/api/orders/:id/reviews", requireCustomer, async (req, res) => {
+    const customer = (req as express.Request & { customer?: AccountUser }).customer!; const order = orders.find((item) => item._id === req.params.id); const productId = String(req.body?.productId || "");
+    if (!order || order.customerId !== customer._id || order.status !== "delivered" || !order.items?.some((item) => item.product?._id === productId)) { res.status(403).json({ message: "Only delivered purchases can be reviewed." }); return; }
+    if (reviews.some((review) => review.orderId === order._id && review.productId === productId && review.customerId === customer._id)) { res.status(409).json({ message: "This purchase already has a review." }); return; }
+    const rating = Number(req.body?.rating); if (!Number.isInteger(rating) || rating < 1 || rating > 5) { res.status(400).json({ message: "Rating must be from 1 to 5." }); return; }
+    const review: ReviewRecord = { _id: `rev_${randomUUID()}`, orderId: order._id, productId, customerId: customer._id, rating, text: String(req.body?.text || "").slice(0, 1500), photos: Array.isArray(req.body?.photos) ? req.body.photos.slice(0, 4) : [], sizeFit: String(req.body?.sizeFit || ""), quality: String(req.body?.quality || ""), value: String(req.body?.value || ""), verifiedPurchase: true, status: "PUBLISHED", createdAt: new Date().toISOString() };
+    reviews.unshift(review); await persistLocalCommerce(); res.status(201).json(review);
+  });
+  app.post("/api/orders/:id/returns", requireCustomer, async (req, res) => {
+    const customer = (req as express.Request & { customer?: AccountUser }).customer!; const order = orders.find((item) => item._id === req.params.id); const productId = String(req.body?.productId || "");
+    if (!order || order.customerId !== customer._id || order.status !== "delivered" || !order.items?.some((item) => item.product?._id === productId)) { res.status(403).json({ message: "Only delivered items from your order can be returned." }); return; }
+    const reason = String(req.body?.reason || "Other").toLowerCase(); const product = products.find((item) => item._id === productId)!; const delivery = estimateDelivery(product, order.address || {});
+    const record: ReturnRecord = { _id: `ret_${randomUUID()}`, orderId: order._id, productId, customerId: customer._id, reason, status: "requested", responsibility: localCommerceConfig.shipping.returnPolicies[reason] || "customer", localReversePickup: delivery.isLocal, pickupEta: delivery.isLocal ? "1–2 days" : "3–6 days", createdAt: new Date().toISOString() };
+    returns.unshift(record); order.status = "return_requested"; order.returnStatus = "requested"; await Promise.all([persistOrders(), persistLocalCommerce()]); res.status(201).json(record);
+  });
+
+  app.get("/api/admin/seller-invitations", requireAdmin, (_req, res) => {
+    const requester = authService.getRequestUser(_req as any);
+    if (requester && requester.role === "seller") {
+      res.status(403).json({ message: "Seller panels cannot manage platform invitations." });
+      return;
+    }
+
+    const invitations = [...sellerInvitations].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    res.json({ invitations });
+  });
+
+  app.post("/api/admin/seller-invitations", requireAdmin, async (req, res) => {
+    const requester = authService.getRequestUser(req as any);
+    if (requester && requester.role === "seller") {
+      res.status(403).json({ message: "Seller panels cannot manage platform invitations." });
+      return;
+    }
+
+    const rawCode = String(req.body.code || "").trim();
+    const code = rawCode || generateSellerInvitationCode();
+    const normalized = code.toUpperCase();
+    const existing = sellerInvitations.find((entry) => entry.code.toUpperCase() === normalized);
+    if (existing) {
+      res.status(409).json({ message: "An invitation with this code already exists." });
+      return;
+    }
+
+    const invite: SellerInvitation = {
+      _id: `si_${Date.now()}_${randomUUID().slice(0, 6)}`,
+      code: normalized,
+      type: "seller",
+      status: "ACTIVE",
+      createdBy: requester?._id || "trendora-admin",
+      createdAt: new Date().toISOString(),
+      expiresAt: req.body.expiresAt ? String(req.body.expiresAt) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      notes: String(req.body.notes || "Seller onboarding invitation"),
+      used: false,
+    };
+
+    sellerInvitations.unshift(invite);
+    await persistSellerInvitations();
+    res.status(201).json(invite);
+  });
+
+  app.post("/api/admin/seller-invitations/:id/revoke", requireAdmin, async (req, res) => {
+    const requester = authService.getRequestUser(req as any);
+    if (requester && requester.role === "seller") {
+      res.status(403).json({ message: "Seller panels cannot manage platform invitations." });
+      return;
+    }
+
+    const invitation = sellerInvitations.find((entry) => entry._id === req.params.id);
+    if (!invitation) {
+      res.status(404).json({ message: "Invitation not found." });
+      return;
+    }
+
+    invitation.status = "DISABLED";
+    invitation.notes = invitation.notes || "Revoked by admin";
+    await persistSellerInvitations();
+    res.json({ success: true, invitation });
+  });
+
+  app.post("/api/admin/seller-invitations/:id/validate", requireAdmin, (req, res) => {
+    const invitation = sellerInvitations.find((entry) => entry._id === req.params.id);
+    const result = validateSellerInvitation(invitation);
+    res.json({ valid: result.valid, reason: result.reason || "Invitation is valid." });
+  });
 
   // Profile photo is optional at registration and can be added or changed later.
   app.put(
@@ -1115,7 +1400,6 @@ export async function startServer() {
     const name = String(req.body.name || "").trim();
     const email = String(req.body.email || "").trim().toLowerCase();
     const password = String(req.body.password || "");
-    const phone = String(req.body.phone || "").trim();
 
     if (!name || !email || password.length < 6) {
       res.status(400).json({ message: "Name, email and a 6+ character password are required." });
@@ -1132,7 +1416,6 @@ export async function startServer() {
       name,
       email,
       passwordHash: await bcrypt.hash(password, 10),
-      phone: phone || undefined,
       role: "user",
       blocked: false,
       createdAt: new Date().toISOString(),
@@ -1142,7 +1425,6 @@ export async function startServer() {
 
     users.unshift(user);
     await persistUsers();
-    // Queue welcome email when mailer configured
     try {
       if (mailer) {
         const { subject, text, html } = renderWelcomeEmail(user);
@@ -1154,6 +1436,53 @@ export async function startServer() {
 
     const token = makeAuthToken(user);
     res.status(201).json({ token, user: getPublicUser(user) });
+  });
+
+  app.post("/api/auth/google", async (req, res) => {
+    const name = String(req.body.name || "").trim();
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const avatar = String(req.body.avatar || "").trim() || undefined;
+
+    if (!name || !email) {
+      res.status(400).json({ message: "Google name and email are required." });
+      return;
+    }
+
+    let user = users.find((entry) => entry.email.toLowerCase() === email);
+
+    if (!user) {
+      user = {
+        _id: `u_${randomUUID()}`,
+        name,
+        email,
+        avatar,
+        role: "user",
+        blocked: false,
+        createdAt: new Date().toISOString(),
+        orders: 0,
+        spent: 0,
+      };
+      users.unshift(user);
+      await persistUsers();
+      const token = makeAuthToken(user);
+      res.status(201).json({ token, user: getPublicUser(user) });
+      return;
+    }
+
+    if (avatar && !user.avatar) {
+      user.avatar = avatar;
+    }
+    if (user.name !== name) {
+      user.name = name;
+    }
+    if (user.blocked) {
+      res.status(403).json({ message: "Account blocked. Support se contact karo." });
+      return;
+    }
+    await persistUsers();
+
+    const token = makeAuthToken(user);
+    res.json({ token, user: getPublicUser(user) });
   });
 
   app.post("/api/auth/login", async (req, res) => {
@@ -1322,6 +1651,21 @@ export async function startServer() {
     res.json(products);
   });
 
+  app.get("/api/admin/local-commerce", requireAdmin, (_req, res) => {
+    if (authService.getRequestUser(_req as any)?.role === "seller") { res.status(403).json({ message: "Seller panels cannot access marketplace analytics." }); return; }
+    const byCity: Record<string, { approvedSellers: number; activeProducts: number; localOrders: number; crossCityOrders: number; localGmv: number; crossCityGmv: number; returns: number }> = {};
+    for (const seller of users.filter((user) => user.role === "seller")) { const city = seller.city || "Unspecified"; const row = byCity[city] ||= { approvedSellers: 0, activeProducts: 0, localOrders: 0, crossCityOrders: 0, localGmv: 0, crossCityGmv: 0, returns: 0 }; if (seller.sellerStatus === "APPROVED") row.approvedSellers += 1; }
+    for (const product of products) { const city = product.sellerCity || users.find((user) => user._id === product.sellerId)?.city || "Unspecified"; const row = byCity[city] ||= { approvedSellers: 0, activeProducts: 0, localOrders: 0, crossCityOrders: 0, localGmv: 0, crossCityGmv: 0, returns: 0 }; row.activeProducts += 1; }
+    for (const order of orders) { const city = String(order.address?.city || "Unspecified"); const row = byCity[city] ||= { approvedSellers: 0, activeProducts: 0, localOrders: 0, crossCityOrders: 0, localGmv: 0, crossCityGmv: 0, returns: 0 }; if (order.fulfillment?.local) { row.localOrders++; row.localGmv += order.amount / 100; } else { row.crossCityOrders++; row.crossCityGmv += order.amount / 100; } }
+    for (const record of returns) { const order = orders.find((item) => item._id === record.orderId); const city = String(order?.address?.city || "Unspecified"); if (byCity[city]) byCity[city].returns += 1; }
+    res.json({ config: localCommerceConfig, cities: Object.entries(byCity).map(([city, metrics]) => ({ city, ...metrics, returnRate: metrics.localOrders + metrics.crossCityOrders ? metrics.returns / (metrics.localOrders + metrics.crossCityOrders) : 0 })), returnsByReason: returns.reduce<Record<string, number>>((result, record) => ({ ...result, [record.reason]: (result[record.reason] || 0) + 1 }), {}) });
+  });
+  app.put("/api/admin/local-commerce/config", requireAdmin, async (req, res) => {
+    if (authService.getRequestUser(req as any)?.role === "seller") { res.status(403).json({ message: "Seller panels cannot change platform configuration." }); return; }
+    const body = req.body || {}; localCommerceConfig = { ...localCommerceConfig, ...(body || {}), ranking: { ...localCommerceConfig.ranking, ...(body.ranking || {}) }, shipping: { ...localCommerceConfig.shipping, ...(body.shipping || {}), returnPolicies: { ...localCommerceConfig.shipping.returnPolicies, ...(body.shipping?.returnPolicies || {}) } }, ai: { ...localCommerceConfig.ai, ...(body.ai || {}) } };
+    await persistLocalCommerce(); res.json(localCommerceConfig);
+  });
+
   app.get("/api/admin/dashboard", requireAdmin, (_req, res) => {
     // Scope dashboard to seller when a seller is authenticated via token
     syncAdminNotifications();
@@ -1401,10 +1745,18 @@ export async function startServer() {
         res.status(403).json({ message: "Create a seller panel before adding products." });
         return;
       }
-      const payload = buildProductPayload(req.body || {});
+      const payload = buildProductPayload(req.body || {}) as Product;
       payload._id = String(payload._id || `p${Date.now()}${Math.floor(Math.random() * 1000)}`);
       payload.sellerId = customer._id;
       payload.sellerName = customer.name;
+      payload.ownerType = "SELLER";
+      payload.sellerCity = customer.city;
+      payload.sellerState = customer.state;
+      payload.sellerPincode = customer.pincode;
+      payload.serviceablePincodes = customer.serviceablePincodes || [];
+      payload.processingDays = Number(customer.processingDays ?? 1);
+      payload.dispatchSlaHours = Number(customer.dispatchSlaHours ?? 24);
+      payload.status = "PENDING_APPROVAL";
       products.unshift(payload as Product);
       await persistProducts();
       res.status(201).json(payload);
@@ -1545,7 +1897,7 @@ export async function startServer() {
     let product: Product;
 
     try {
-      product = buildProductPayload(req.body);
+      product = buildProductPayload(req.body) as Product;
     } catch (error) {
       res.status(400).json({ message: error instanceof Error ? error.message : "Invalid product payload." });
       return;
@@ -1557,6 +1909,7 @@ export async function startServer() {
     }
 
     product = { ...product, _id: `p${Date.now()}` };
+    product.ownerType ||= product.sellerId ? "SELLER" : "TRENDORA";
 
     const requester = authService.getRequestUser(req as any);
     if (requester && requester.role === 'seller') {
@@ -1694,7 +2047,7 @@ export async function startServer() {
 
       rawItems.forEach((item, index) => {
         try {
-          const product = { ...buildProductPayload(item), _id: `p${Date.now()}${index}` };
+          const product = { ...buildProductPayload(item), _id: `p${Date.now()}${index}` } as Product;
           if (products.some((existing) => existing.code === product.code)) {
             skipped.push({ index, reason: `Duplicate code ${product.code}` });
             return;
@@ -1704,6 +2057,8 @@ export async function startServer() {
           if (requester && requester.role === 'seller') {
             product.sellerId = requester._id;
             product.sellerName = requester.name;
+            product.ownerType = 'SELLER';
+            product.status = 'PENDING_APPROVAL';
           }
 
           products.unshift(product);
@@ -1831,6 +2186,7 @@ export async function startServer() {
     user.blocked = Boolean(req.body.blocked);
     if (user.role === "seller" && typeof req.body.sellerApproved === "boolean") {
       user.sellerApproved = req.body.sellerApproved;
+      user.sellerStatus = req.body.sellerApproved ? "APPROVED" : user.sellerStatus || "PENDING_REVIEW";
     }
     persistUsers().catch((err) => console.error("User save error:", err));
     res.json(authService.getPublicUser(user));
@@ -1987,6 +2343,20 @@ export async function startServer() {
       return;
     }
 
+    const deliveryAddress = req.body.address || {};
+    if (!String(deliveryAddress.pincode || "").trim()) {
+      res.status(400).json({ message: "A delivery pincode is required for fulfillment." });
+      return;
+    }
+    const fulfillmentProducts = items.map((item: any) => products.find((product) => product._id === item?.product?._id || product._id === item?.productId)).filter(Boolean) as Product[];
+    if (fulfillmentProducts.length !== items.length) { res.status(404).json({ message: "One or more products are unavailable." }); return; }
+    const unsupportedProduct = fulfillmentProducts.find((product) => !isServiceable(product, deliveryAddress));
+    if (unsupportedProduct) { res.status(422).json({ message: `${unsupportedProduct.name} is not serviceable at this delivery pincode.` }); return; }
+    const fulfillmentShipping = calculateShipping(
+      fulfillmentProducts.reduce((sum, product, index) => sum + product.price * Math.max(1, Number(items[index]?.quantity || 1)), 0), fulfillmentProducts, deliveryAddress, localCommerceConfig,
+    );
+    const deliveryEstimates = fulfillmentProducts.map((product) => estimateDelivery(product, deliveryAddress));
+
     let reservations: Map<string, number> | null = null;
 
     try {
@@ -1999,6 +2369,7 @@ export async function startServer() {
         currency: "INR",
         address: req.body.address,
         items: normalizedItems,
+        fulfillment: { estimatedDelivery: deliveryEstimates.map((estimate) => `${estimate.minDays}–${estimate.maxDays} days`).sort()[0], local: deliveryEstimates.every((estimate) => estimate.isLocal), shipping: fulfillmentShipping },
         customerId: customer?._id,
         customerEmail: customer?.email,
         customerName: customer?.name,

@@ -87,8 +87,9 @@ export function HomePage() {
   });
 
   useEffect(() => {
+    const delivery = new URLSearchParams({ pincode: localStorage.getItem('trendora-pincode') || '', city: localStorage.getItem('trendora-city') || '', state: localStorage.getItem('trendora-state') || '' });
     Promise.all([
-      apiFetch<Product[]>('/api/products'),
+      apiFetch<Product[]>(`/api/products?${delivery}`),
       apiFetch<HomeBanner[]>('/api/banners').catch(() => []),
     ])
       .then(([productData, bannerData]) => {

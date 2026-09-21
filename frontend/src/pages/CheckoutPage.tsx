@@ -146,6 +146,7 @@ export function CheckoutPage() {
   const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'cod'>('razorpay');
   const [message, setMessage] = useState('');
   const [placingOrder, setPlacingOrder] = useState(false);
+  const [shippingQuote, setShippingQuote] = useState<number | null>(null);
 
   usePageMeta({
     title: 'Secure Checkout | Trendora',
@@ -168,13 +169,23 @@ export function CheckoutPage() {
   const isBuyNowCheckout = Boolean(buyNowItem);
   const itemTotal = checkoutItems.reduce((total, item) => total + item.product.price * item.quantity, 0);
   const totalDiscount = checkoutItems.reduce((total, item) => total + (item.product.originalPrice - item.product.price) * item.quantity, 0);
-  const shipping = itemTotal > 999 ? 0 : 99;
+  const shipping = shippingQuote ?? (itemTotal > 999 ? 0 : 99);
   const grandTotal = itemTotal + shipping;
   const stockIssues = checkoutItems.filter((item) => typeof item.product.stock === 'number' && item.product.stock < item.quantity);
 
   const updateAddress = (key: keyof DeliveryAddress, value: string) => {
     setAddress((current) => ({ ...current, [key]: value }));
   };
+
+  useEffect(() => {
+    if (address.pincode.length < 6 || !checkoutItems.length) return;
+    const timer = window.setTimeout(() => {
+      apiFetch<{ shipping: { customerShipping: number } }>('/api/fulfillment/quote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address, items: checkoutItems }) })
+        .then((quote) => setShippingQuote(quote.shipping.customerShipping))
+        .catch((error) => { setShippingQuote(null); setMessage(error instanceof Error ? error.message : 'Delivery is unavailable for this address.'); });
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [address.pincode, address.city, address.state, checkoutItems]);
 
   const recordPaymentFailure = async (orderId: string, reason: string) => {
     try {

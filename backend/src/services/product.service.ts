@@ -18,6 +18,17 @@ export type ProductLike = {
   promoted?: boolean;
   promotedUntil?: string; // ISO date
   promotionBid?: number; // simple numeric bid used for ordering promoted products
+  price?: number;
+  rating?: number;
+  reviews?: number;
+  stock?: number;
+  sellerCity?: string;
+  sellerState?: string;
+  sellerPincode?: string;
+  serviceablePincodes?: string[];
+  fulfillmentLocations?: Array<{ city?: string; state?: string; pincode?: string; stock?: number; processingDays?: number; serviceablePincodes?: string[] }>;
+  processingDays?: number;
+  sellerPerformance?: { dispatchReliability?: number; returnRate?: number; rtoRate?: number; complaintRate?: number };
 };
 
 export type BannerLike = { active: boolean };

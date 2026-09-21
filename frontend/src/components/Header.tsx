@@ -149,7 +149,7 @@ export function Header() {
                     onClick={closeMenu}
                     className={cn(
                       'flex items-center justify-between rounded-2xl px-4 py-3 text-sm font-bold transition-colors',
-                      isActive ? 'bg-black text-white' : 'bg-white text-[#55205f] hover:bg-pink-50'
+                      isActive ? 'bg-gradient-to-r from-[#55205f] to-fuchsia-700 text-white shadow-sm' : 'bg-white text-[#55205f] hover:bg-pink-50'
                     )}
                   >
                     <span className="flex items-center gap-3">
@@ -186,7 +186,7 @@ export function Header() {
                 <Link
                   to="/profile"
                   onClick={closeMenu}
-                  className="flex h-12 items-center justify-center rounded-full bg-black text-sm font-black text-white"
+                  className="flex h-12 items-center justify-center rounded-full bg-gradient-to-r from-[#55205f] to-fuchsia-700 text-sm font-black text-white"
                 >
                   Login
                 </Link>

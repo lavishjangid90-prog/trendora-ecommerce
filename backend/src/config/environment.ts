@@ -22,6 +22,10 @@ export const environment = {
   jwtSecret: process.env.JWT_SECRET || "trendora-local-admin-secret",
   geminiApiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "",
   mongoUri: process.env.MONGODB_URI || "",
+  sellerOnboardingMode: (process.env.SELLER_ONBOARDING_MODE || "INVITATION_ONLY").toUpperCase(),
+  allowedSites: process.env.ALLOWED_SITES
+    ? process.env.ALLOWED_SITES.split(',').map(s => s.trim()).filter(Boolean)
+    : [],
 };
 
 export const paths = {
@@ -43,5 +47,11 @@ export const dataFiles = {
   coupons: path.join(paths.dataDir, "coupons.json"),
   banners: path.join(paths.dataDir, "banners.json"),
   notifications: path.join(paths.dataDir, "notifications.json"),
+  sellerInvitations: path.join(paths.dataDir, "seller-invitations.json"),
+  revenueLedger: path.join(paths.dataDir, "revenue-ledger.json"),
+  sellerCampaigns: path.join(paths.dataDir, "seller-campaigns.json"),
   aiAnalytics: path.join(paths.dataDir, "ai-analytics.json"),
+  localCommerceConfig: path.join(paths.dataDir, "local-commerce-config.json"),
+  reviews: path.join(paths.dataDir, "reviews.json"),
+  returns: path.join(paths.dataDir, "returns.json"),
 };

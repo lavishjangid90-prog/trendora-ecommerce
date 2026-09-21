@@ -10,13 +10,17 @@ export function createAuthController(service: AuthService) {
   };
 
   const registerSeller: RequestHandler = async (req, res) => {
-    // only allow creating a seller via a dedicated endpoint
     const result = await (service as any).registerSeller(req.body || {});
     res.status(result.status).json(result.body);
   };
 
   const login: RequestHandler = async (req, res) => {
     const result = await service.login(req.body || {});
+    res.status(result.status).json(result.body);
+  };
+
+  const googleLogin: RequestHandler = async (req, res) => {
+    const result = await service.googleLogin(req.body || {});
     res.status(result.status).json(result.body);
   };
 
@@ -38,5 +42,5 @@ export function createAuthController(service: AuthService) {
     res.json({ authenticated: true, role: "admin" });
   };
 
-  return { register, registerSeller, login, me, adminLogin, adminSession };
+  return { register, registerSeller, login, googleLogin, me, adminLogin, adminSession };
 }

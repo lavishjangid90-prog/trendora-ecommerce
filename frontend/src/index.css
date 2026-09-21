@@ -19,7 +19,56 @@
 
 body {
   font-family: var(--font-sans);
-  background-color: #f3f4f6; /* gray-100 */
+  background: #fff8fd;
+  color: #55205f;
+}
+
+/* Shared Trendora visual system: customer, seller and admin use the same
+   magenta–purple storefront language rather than separate dashboard themes. */
+:root {
+  --trendora-plum: #55205f;
+  --trendora-purple: #8b2ca9;
+  --trendora-pink: #d62f91;
+  --trendora-soft: #fff7fc;
+  --trendora-soft-pink: #fce9f7;
+  --trendora-line: #f2cce6;
+}
+
+.field {
+  border-color: var(--trendora-line);
+  background: #fff;
+  color: var(--trendora-plum);
+  box-shadow: 0 1px 2px rgb(85 32 95 / 0.03);
+}
+.field::placeholder { color: #bc91b7; }
+.field:focus { border-color: var(--trendora-pink); box-shadow: 0 0 0 3px rgb(214 47 145 / 0.12); }
+
+/* Utility overrides keep the existing pages intact while giving every role a
+   common surface, typography and action color. */
+.bg-gray-50 { background-color: var(--trendora-soft) !important; }
+.bg-gray-100 { background-color: #f9eefa !important; }
+.border-gray-100, .border-gray-200 { border-color: var(--trendora-line) !important; }
+.border-black { border-color: var(--trendora-plum) !important; }
+.bg-black { background: linear-gradient(135deg, var(--trendora-plum), var(--trendora-purple)) !important; }
+.text-black, .text-gray-900, .text-gray-950, .text-gray-800 { color: var(--trendora-plum) !important; }
+.text-gray-700, .text-gray-600 { color: #735175 !important; }
+.text-gray-500 { color: #967096 !important; }
+.text-gray-400 { color: #ba98b9 !important; }
+.hover\:bg-gray-100:hover { background-color: var(--trendora-soft-pink) !important; }
+.hover\:text-gray-700:hover { color: var(--trendora-pink) !important; }
+.bg-pink-50 { background-color: var(--trendora-soft-pink) !important; }
+.border-pink-100, .border-pink-200 { border-color: var(--trendora-line) !important; }
+.text-pink-600 { color: var(--trendora-pink) !important; }
+.ring-pink-100 { --tw-ring-color: var(--trendora-line) !important; }
+
+input:not([type="checkbox"]):not([type="radio"]), select, textarea {
+  border-color: var(--trendora-line);
+  color: var(--trendora-plum);
+}
+input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--trendora-pink);
+  box-shadow: 0 0 0 3px rgb(214 47 145 / 0.12);
 }
 
 * {

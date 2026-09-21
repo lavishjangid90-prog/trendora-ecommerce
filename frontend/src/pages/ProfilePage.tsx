@@ -8,7 +8,7 @@ import { apiFetch, assetUrl } from '../config';
 
 type AuthMode = 'login' | 'register';
 
-const emptyCredentials = { name: '', email: '', password: '', phone: '' };
+const emptyCredentials = { name: '', email: '', password: '' };
 
 export function ProfilePage() {
   const navigate = useNavigate();
@@ -19,11 +19,13 @@ export function ProfilePage() {
 
   const [mode, setMode] = useState<AuthMode>('login');
   const [credentials, setCredentials] = useState(emptyCredentials);
+  const [googleForm, setGoogleForm] = useState({ name: '', email: '' });
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(Boolean(authToken));
   const [message, setMessage] = useState('');
   const [orders, setOrders] = useState<OrderHistoryItem[]>([]);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   usePageMeta({
     title: 'My Profile | Trendora',
@@ -91,12 +93,8 @@ export function ProfilePage() {
 
     try {
       const endpoint = mode === 'register' ? '/api/auth/register' : '/api/auth/login';
-      const phone = credentials.phone?.trim() || undefined;
-      if (mode === 'register' && phone && !/^[+\d][\d\s-]{6,20}$/.test(phone)) {
-        throw new Error('Invalid phone number format.');
-      }
       const payload = mode === 'register'
-        ? { ...credentials, phone }
+        ? { ...credentials }
         : { email: credentials.email, password: credentials.password };
 
       const data = await apiFetch<{ token?: string; user?: AppUser; message?: string }>(endpoint, {
@@ -130,6 +128,43 @@ export function ProfilePage() {
       setMessage(error instanceof Error ? error.message : 'Login/register nahi ho paya.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleAuth = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setGoogleLoading(true);
+    setMessage('');
+
+    try {
+      const name = googleForm.name.trim();
+      const email = googleForm.email.trim();
+      if (!name || !email) {
+        throw new Error('Google name and email are required.');
+      }
+
+      const data = await apiFetch<{ token?: string; user?: AppUser; message?: string }>('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, avatar: '' }),
+      });
+
+      if (!data.token || !data.user) {
+        throw new Error(data.message || 'Google login failed.');
+      }
+
+      setAuthSession(data.user, data.token);
+      setGoogleForm({ name: '', email: '' });
+      setMessage('Google account connected successfully.');
+      setMode('login');
+      const orderData = await apiFetch<OrderHistoryItem[]>('/api/orders/me', {
+        headers: { Authorization: `Bearer ${data.token}` },
+      });
+      setOrders(orderData);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Google login/register nahi ho paya.');
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -213,6 +248,43 @@ export function ProfilePage() {
                 </button>
               </div>
 
+              <button
+                type="button"
+                onClick={() => setGoogleForm({ name: credentials.name || '', email: credentials.email || '' })}
+                className="mb-4 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-gray-200 bg-white text-sm font-bold text-gray-800"
+              >
+                <span className="text-base">G</span>
+                Continue with Google
+              </button>
+
+              {googleForm.email || googleForm.name ? (
+                <form onSubmit={handleGoogleAuth} className="mb-4 space-y-3 rounded-2xl border border-gray-200 bg-gray-50 p-3">
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-gray-500">Google account</p>
+                  <input
+                    required
+                    value={googleForm.name}
+                    onChange={(event) => setGoogleForm((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="Google display name"
+                    className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 outline-none focus:border-black"
+                  />
+                  <input
+                    required
+                    type="email"
+                    value={googleForm.email}
+                    onChange={(event) => setGoogleForm((current) => ({ ...current, email: event.target.value }))}
+                    placeholder="Google email address"
+                    className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 outline-none focus:border-black"
+                  />
+                  <button
+                    type="submit"
+                    disabled={googleLoading}
+                    className="h-11 w-full rounded-full bg-black text-sm font-bold text-white disabled:opacity-60"
+                  >
+                    {googleLoading ? 'Connecting...' : 'Continue with Google'}
+                  </button>
+                </form>
+              ) : null}
+
               <form onSubmit={handleAuthSubmit} className="space-y-3">
                 {mode === 'register' && (
                   <input
@@ -232,18 +304,9 @@ export function ProfilePage() {
                   className="h-12 w-full rounded-xl border border-gray-200 px-3 outline-none focus:border-black"
                 />
                 {mode === 'register' && (
-                  <>
-                    <input
-                      value={credentials.phone}
-                      onChange={(event) => updateField('phone', event.target.value)}
-                      placeholder="Phone (optional, e.g. +919876543210)"
-                      type="tel"
-                      className="h-12 w-full rounded-xl border border-gray-200 px-3 outline-none focus:border-black"
-                    />
-                    <label className="block text-sm font-semibold text-gray-600">Profile photo <span className="font-normal text-gray-400">(optional)</span>
-                      <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => setAvatarFile(event.target.files?.[0] || null)} className="mt-1 block w-full text-sm font-normal" />
-                    </label>
-                  </>
+                  <label className="block text-sm font-semibold text-gray-600">Profile photo <span className="font-normal text-gray-400">(optional)</span>
+                    <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => setAvatarFile(event.target.files?.[0] || null)} className="mt-1 block w-full text-sm font-normal" />
+                  </label>
                 )}
                 <input
                   required

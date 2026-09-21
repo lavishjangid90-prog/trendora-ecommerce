@@ -27,6 +27,16 @@ export interface Product {
   promoted?: boolean;
   promotedUntil?: string;
   promotionBid?: number;
+  ownerType?: 'SELLER' | 'TRENDORA';
+  sellerCity?: string;
+  sellerState?: string;
+  sellerPincode?: string;
+  fulfillmentCity?: string;
+  isLocal?: boolean;
+  estimatedDelivery?: string;
+  serviceablePincodes?: string[];
+  processingDays?: number;
+  localScore?: number;
 }
 
 export interface CartItem {

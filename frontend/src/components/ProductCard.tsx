@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Heart, Star } from 'lucide-react';
+import { Heart, MapPin, Star, Truck, Zap } from 'lucide-react';
 import { Product } from '../types';
 import { useStore } from '../store/useStore';
 import { cn } from '../lib/utils';
@@ -63,6 +63,12 @@ export function ProductCard({ product }: { product: Product }) {
             <span className="text-xs text-gray-400 line-through">₹{product.originalPrice}</span>
           )}
         </div>
+        {(product.fulfillmentCity || product.estimatedDelivery) && (
+          <div className="mt-1.5 flex flex-col gap-0.5 text-[11px] font-semibold text-gray-500">
+            {product.fulfillmentCity && <span className="flex items-center gap-1"><MapPin size={11} className="text-pink-500" />{product.isLocal ? 'Near you · ' : ''}{product.fulfillmentCity} seller</span>}
+            {product.estimatedDelivery && <span className="flex items-center gap-1"><Zap size={11} className="text-amber-500" /><Truck size={11} />Estimated delivery: {product.estimatedDelivery}</span>}
+          </div>
+        )}
       </Link>
     </motion.div>
   );

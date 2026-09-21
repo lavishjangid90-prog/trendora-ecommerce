@@ -4,6 +4,7 @@ type AuthController = {
   register: RequestHandler;
   registerSeller: RequestHandler;
   login: RequestHandler;
+  googleLogin: RequestHandler;
   me: RequestHandler;
   adminLogin: RequestHandler;
   adminSession: RequestHandler;
@@ -14,6 +15,7 @@ export function createAuthRouter(controller: AuthController, requireCustomer: Re
   router.post("/auth/register", controller.register);
   router.post("/auth/register-seller", controller.registerSeller);
   router.post("/auth/login", controller.login);
+  router.post("/auth/google", controller.googleLogin);
   router.get("/auth/me", requireCustomer, controller.me);
   router.post("/admin/login", controller.adminLogin);
   router.get("/admin/session", requireAdmin, controller.adminSession);

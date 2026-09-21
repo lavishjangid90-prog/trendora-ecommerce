@@ -9,6 +9,8 @@ export function SearchPage() {
   const [query, setQuery] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
+  const [location, setLocation] = useState({ pincode: localStorage.getItem('trendora-pincode') || '', city: localStorage.getItem('trendora-city') || '', state: localStorage.getItem('trendora-state') || '' });
+  const [localOnly, setLocalOnly] = useState(false);
 
   usePageMeta({
     title: 'Search Products | Trendora',
@@ -19,7 +21,8 @@ export function SearchPage() {
     const controller = new AbortController();
     setLoading(true);
 
-    apiFetch<Product[]>(`/api/products?search=${encodeURIComponent(query)}`, { signal: controller.signal })
+    const params = new URLSearchParams({ search: query, ...location, ...(localOnly ? { local: 'local' } : {}) });
+    apiFetch<Product[]>(`/api/products?${params}`, { signal: controller.signal })
       .then((data) => {
         setProducts(data);
         setLoading(false);
@@ -32,7 +35,9 @@ export function SearchPage() {
       });
 
     return () => controller.abort();
-  }, [query]);
+  }, [query, location, localOnly]);
+
+  const updateLocation = (key: keyof typeof location, value: string) => { const next = { ...location, [key]: value }; setLocation(next); localStorage.setItem(`trendora-${key}`, value); };
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
@@ -47,6 +52,12 @@ export function SearchPage() {
             className="flex-1 bg-transparent text-sm outline-none"
           />
           <SlidersHorizontal size={18} className="text-gray-500" />
+        </div>
+        <div className="mt-3 grid grid-cols-[1fr_1fr_1fr_auto] gap-2">
+          <input value={location.pincode} onChange={(e) => updateLocation('pincode', e.target.value)} placeholder="Pincode" className="min-w-0 rounded-lg border px-2 py-2 text-xs" />
+          <input value={location.city} onChange={(e) => updateLocation('city', e.target.value)} placeholder="City" className="min-w-0 rounded-lg border px-2 py-2 text-xs" />
+          <input value={location.state} onChange={(e) => updateLocation('state', e.target.value)} placeholder="State" className="min-w-0 rounded-lg border px-2 py-2 text-xs" />
+          <button type="button" onClick={() => setLocalOnly((value) => !value)} className={`rounded-lg px-2 text-xs font-bold ${localOnly ? 'bg-pink-600 text-white' : 'bg-gray-100 text-gray-600'}`}>Near me</button>
         </div>
       </div>
 
