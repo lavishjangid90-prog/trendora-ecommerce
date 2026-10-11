@@ -238,6 +238,18 @@ type SellerInvitation = {
   sellerId?: string;
 };
 
+type SupplierStatus = "NEW_REQUEST" | "CONTACTED" | "UNDER_VERIFICATION" | "MORE_INFORMATION_REQUIRED" | "APPROVED_PENDING_ACTIVATION" | "ACTIVE" | "REJECTED" | "SUSPENDED";
+type SupplierApplication = {
+  _id: string; reference: string; businessName: string; applicantName: string;
+  supplierType: "MANUFACTURER" | "WHOLESALER"; city: string; state: string; mobile: string; email: string;
+  categories: string[]; websiteUrl?: string; description: string; status: SupplierStatus;
+  documentsVerified?: boolean; sourcingVerified?: boolean; sampleInspection?: { result: "PASS" | "FAIL"; notes: string; at: string; by: string };
+  notes: Array<{ text: string; at: string; by: string; kind: "NOTE" | "CONTACT" | "MORE_INFO" }>;
+  history: Array<{ from?: SupplierStatus; to: SupplierStatus; at: string; by: string; reason?: string }>;
+  approvedBy?: string; approvedAt?: string; approvedCategories?: string[]; activationToken?: string; activationExpiresAt?: string; activationUsedAt?: string;
+  supplierUserId?: string; createdAt: string; updatedAt: string;
+};
+
 type RevenueLedgerEntry = {
   _id: string;
   kind: "ADVERTISING" | "PROMOTED_PRODUCT" | "FEATURED_PLACEMENT" | "SELLER_SERVICE" | "TRENDORA_PRODUCT" | "SELLER_GMV" | "REFUND" | "RETURN" | "RTO";
@@ -307,6 +319,7 @@ const users: AccountUser[] = [];
 const coupons: Coupon[] = [];
 const banners: Banner[] = [];
 const sellerInvitations: SellerInvitation[] = [];
+const supplierApplications: SupplierApplication[] = [];
 const revenueLedger: RevenueLedgerEntry[] = [];
 const sellerCampaigns: SellerCampaign[] = [];
 const reviews: ReviewRecord[] = [];
@@ -324,6 +337,7 @@ const couponsFile = dataFiles.coupons;
 const bannersFile = dataFiles.banners;
 const notificationsFile = dataFiles.notifications;
 const sellerInvitationsFile = dataFiles.sellerInvitations;
+const supplierApplicationsFile = dataFiles.supplierApplications;
 const revenueLedgerFile = dataFiles.revenueLedger;
 const sellerCampaignsFile = dataFiles.sellerCampaigns;
 const reviewsFile = dataFiles.reviews;
@@ -623,6 +637,19 @@ async function persistNotifications() {
 async function persistSellerInvitations() {
   await writeJsonFile(sellerInvitationsFile, sellerInvitations);
 }
+
+async function persistSupplierApplications() { await writeJsonFile(supplierApplicationsFile, supplierApplications); }
+
+const supplierTransitions: Record<SupplierStatus, SupplierStatus[]> = {
+  NEW_REQUEST: ["CONTACTED", "UNDER_VERIFICATION", "MORE_INFORMATION_REQUIRED", "REJECTED"],
+  CONTACTED: ["UNDER_VERIFICATION", "MORE_INFORMATION_REQUIRED", "REJECTED"],
+  UNDER_VERIFICATION: ["MORE_INFORMATION_REQUIRED", "APPROVED_PENDING_ACTIVATION", "REJECTED"],
+  MORE_INFORMATION_REQUIRED: ["CONTACTED", "UNDER_VERIFICATION", "REJECTED"],
+  APPROVED_PENDING_ACTIVATION: ["ACTIVE", "SUSPENDED"],
+  ACTIVE: ["SUSPENDED"], SUSPENDED: ["ACTIVE", "REJECTED"], REJECTED: [],
+};
+function supplierReference() { return `TRD-SUP-${new Date().getFullYear()}-${randomUUID().slice(0, 8).toUpperCase()}`; }
+function isActiveSupplier(user: AccountUser | undefined) { return !!user && user.role === "seller" && user.sellerStatus === "ACTIVE" && !user.blocked; }
 
 async function persistRevenueLedger() {
   await writeJsonFile(revenueLedgerFile, revenueLedger);
@@ -933,6 +960,7 @@ export async function startServer() {
   const savedCoupons = await readJsonFile<Coupon[]>(couponsFile, []);
   const savedBanners = await readJsonFile<Banner[]>(bannersFile, []);
   const savedSellerInvitations = await readJsonFile<SellerInvitation[]>(sellerInvitationsFile, []);
+  const savedSupplierApplications = await readJsonFile<SupplierApplication[]>(supplierApplicationsFile, []);
   const savedNotifications = await readJsonFile<AdminNotification[]>(notificationsFile, []);
   const savedAiAnalytics = await readJsonFile<AiAnalyticsRecord[]>(aiAnalyticsFile, []);
   const savedReviews = await readJsonFile<ReviewRecord[]>(reviewsFile, []);
@@ -971,6 +999,7 @@ export async function startServer() {
   ];
   users.splice(0, users.length, ...(savedUsers.length ? savedUsers : fallbackUsers));
   sellerInvitations.splice(0, sellerInvitations.length, ...savedSellerInvitations);
+  supplierApplications.splice(0, supplierApplications.length, ...savedSupplierApplications);
   coupons.splice(0, coupons.length, ...savedCoupons);
   const fallbackBanners: Banner[] = [
     {
@@ -1022,6 +1051,69 @@ export async function startServer() {
     };
 
     const promotions: PromotionRecord[] = [];
+
+  // Public access requests deliberately create no user account or seller capability.
+  const supplierRequestHits = new Map<string, number[]>();
+  app.post("/api/supplier-applications", async (req, res) => {
+    const ip = req.ip || "unknown"; const now = Date.now();
+    const recent = (supplierRequestHits.get(ip) || []).filter((at) => now - at < 60 * 60 * 1000);
+    if (recent.length >= 5) { res.status(429).json({ message: "Too many requests. Please try again later." }); return; }
+    supplierRequestHits.set(ip, [...recent, now]);
+    const body = req.body || {};
+    const clean = (value: unknown, limit = 160) => String(value || "").trim().replace(/[<>]/g, "").slice(0, limit);
+    const businessName = clean(body.businessName); const applicantName = clean(body.applicantName); const city = clean(body.city); const state = clean(body.state);
+    const mobile = clean(body.mobile, 24); const email = clean(body.email, 160).toLowerCase(); const description = clean(body.description, 1200);
+    const supplierType = String(body.supplierType || "").toUpperCase();
+    const categories = Array.isArray(body.categories) ? body.categories.map((v) => clean(v, 80)).filter(Boolean).slice(0, 12) : [];
+    const websiteUrl = clean(body.websiteUrl, 400);
+    if (!businessName || !applicantName || !city || !state || !description || !categories.length || !/^[+\d][\d\s-]{6,20}$/.test(mobile) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !["MANUFACTURER", "WHOLESALER"].includes(supplierType)) {
+      res.status(400).json({ message: "Please provide valid business, contact, category and supplier-type details." }); return;
+    }
+    if (websiteUrl && !/^https?:\/\//i.test(websiteUrl)) { res.status(400).json({ message: "Website or catalogue URL must start with http:// or https://." }); return; }
+    const duplicate = supplierApplications.find((a) => a.email === email && a.businessName.toLowerCase() === businessName.toLowerCase() && !["REJECTED"].includes(a.status));
+    if (duplicate) { res.status(409).json({ message: "An application for this verified business is already under review.", reference: duplicate.reference }); return; }
+    const application: SupplierApplication = { _id: `sup_${randomUUID()}`, reference: supplierReference(), businessName, applicantName, supplierType: supplierType as SupplierApplication["supplierType"], city, state, mobile, email, categories, websiteUrl: websiteUrl || undefined, description, status: "NEW_REQUEST", notes: [], history: [{ to: "NEW_REQUEST", at: new Date().toISOString(), by: "applicant" }], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    supplierApplications.unshift(application); await persistSupplierApplications();
+    res.status(201).json({ reference: application.reference, status: application.status, message: "Your supplier access request was received. This does not create a seller account." });
+  });
+  app.get("/api/supplier-applications/status", (req, res) => {
+    const reference = String(req.query.reference || "").trim(); const email = String(req.query.email || "").trim().toLowerCase();
+    const application = supplierApplications.find((a) => a.reference === reference && a.email === email);
+    if (!application) { res.status(404).json({ message: "Application not found." }); return; }
+    res.json({ reference: application.reference, businessName: application.businessName, status: application.status, categories: application.categories, updatedAt: application.updatedAt, history: application.history.map(({ to, at, reason }) => ({ to, at, reason })) });
+  });
+  app.get("/api/admin/supplier-applications", requireAdmin, (req, res) => {
+    const q = String(req.query.q || "").toLowerCase(); const status = String(req.query.status || ""); const city = String(req.query.city || "").toLowerCase(); const supplierType = String(req.query.supplierType || "");
+    res.json(supplierApplications.filter((a) => (!q || [a.reference, a.businessName, a.applicantName, a.email].join(" ").toLowerCase().includes(q)) && (!status || a.status === status) && (!city || a.city.toLowerCase() === city) && (!supplierType || a.supplierType === supplierType)));
+  });
+  app.patch("/api/admin/supplier-applications/:id", requireAdmin, async (req, res) => {
+    const application = supplierApplications.find((a) => a._id === req.params.id); if (!application) { res.status(404).json({ message: "Application not found." }); return; }
+    const body = req.body || {}; const admin = String((req as any).adminPayload?.email || "trendora-admin"); const next = String(body.status || application.status) as SupplierStatus;
+    if (next !== application.status && !supplierTransitions[application.status].includes(next)) { res.status(400).json({ message: `Invalid transition from ${application.status} to ${next}.` }); return; }
+    const reason = String(body.reason || "").trim().slice(0, 1000);
+    if ((next === "REJECTED" || next === "MORE_INFORMATION_REQUIRED") && !reason) { res.status(400).json({ message: "A reason is required for this decision." }); return; }
+    if (next === "APPROVED_PENDING_ACTIVATION" && (!application.documentsVerified || !application.sourcingVerified)) { res.status(400).json({ message: "Document and sourcing verification are required before approval." }); return; }
+    if (body.note) application.notes.unshift({ text: String(body.note).trim().slice(0, 1500), at: new Date().toISOString(), by: admin, kind: body.noteKind === "CONTACT" ? "CONTACT" : body.noteKind === "MORE_INFO" ? "MORE_INFO" : "NOTE" });
+    if (typeof body.documentsVerified === "boolean") application.documentsVerified = body.documentsVerified;
+    if (typeof body.sourcingVerified === "boolean") application.sourcingVerified = body.sourcingVerified;
+    if (body.sampleResult && ["PASS", "FAIL"].includes(body.sampleResult)) application.sampleInspection = { result: body.sampleResult, notes: String(body.sampleNotes || "").slice(0, 1000), at: new Date().toISOString(), by: admin };
+    if (next !== application.status) { const previous = application.status; application.status = next; application.history.unshift({ from: previous, to: next, at: new Date().toISOString(), by: admin, reason: reason || undefined }); }
+    if (next === "APPROVED_PENDING_ACTIVATION") { application.approvedBy = admin; application.approvedAt = new Date().toISOString(); application.approvedCategories = Array.isArray(body.approvedCategories) ? body.approvedCategories.map(String).filter((v) => application.categories.includes(v)) : application.categories; application.activationToken = randomUUID(); application.activationExpiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(); }
+    application.updatedAt = new Date().toISOString(); await persistSupplierApplications();
+    const activationUrl = application.activationToken && environment.appUrl ? `${environment.appUrl}/supplier/activate?token=${application.activationToken}` : undefined;
+    if (next === "APPROVED_PENDING_ACTIVATION" && mailer && activationUrl) { await mailer.sendMail({ to: application.email, subject: "Activate your Trendora supplier account", text: `Your application is approved. Activate within 72 hours: ${activationUrl}` }); }
+    res.json({ application, activationEmailSent: Boolean(next === "APPROVED_PENDING_ACTIVATION" && mailer && activationUrl), activationConfigured: Boolean(environment.appUrl), message: next === "APPROVED_PENDING_ACTIVATION" && !mailer ? "Approved and pending activation. Configure SMTP_HOST, SMTP_USER, SMTP_PASS and APP_URL to email the secure link." : undefined });
+  });
+  app.post("/api/supplier-applications/activate", async (req, res) => {
+    const token = String(req.body?.token || ""); const password = String(req.body?.password || "");
+    const application = supplierApplications.find((a) => a.activationToken === token && a.status === "APPROVED_PENDING_ACTIVATION");
+    if (!application || !application.activationExpiresAt || Date.parse(application.activationExpiresAt) < Date.now() || application.activationUsedAt) { res.status(400).json({ message: "This activation link is invalid, used, or expired." }); return; }
+    if (password.length < 8) { res.status(400).json({ message: "Choose a password of at least 8 characters." }); return; }
+    if (users.some((u) => u.email.toLowerCase() === application.email && u._id !== application.supplierUserId)) { res.status(409).json({ message: "An account already uses this business email. Contact support for manual review." }); return; }
+    const user: AccountUser = { _id: `u_${randomUUID()}`, name: application.applicantName, email: application.email, businessName: application.businessName, city: application.city, state: application.state, phone: application.mobile, productCategories: application.approvedCategories || application.categories, businessType: application.supplierType, passwordHash: await bcrypt.hash(password, 10), role: "seller", sellerApproved: true, sellerStatus: "ACTIVE" as any, blocked: false, createdAt: new Date().toISOString(), orders: 0, spent: 0 };
+    users.unshift(user); application.supplierUserId = user._id; application.activationUsedAt = new Date().toISOString(); application.activationToken = undefined; application.status = "ACTIVE"; application.history.unshift({ from: "APPROVED_PENDING_ACTIVATION", to: "ACTIVE", at: application.activationUsedAt, by: user._id }); application.updatedAt = application.activationUsedAt;
+    await Promise.all([persistUsers(), persistSupplierApplications()]); res.status(201).json({ token: makeAuthToken(user), user: getPublicUser(user) });
+  });
 
   app.use("/api", createProductRouter(createProductController(products, banners, { getConfig: () => localCommerceConfig })));
   app.use("/api", createAuthRouter(authController, requireCustomer, requireAdmin));
@@ -1737,12 +1829,16 @@ export async function startServer() {
     });
   });
 
+  app.get("/api/seller/dashboard", requireCustomer, (req, res) => { const seller = (req as any).customer as AccountUser; if (!isActiveSupplier(seller)) { res.status(403).json({ message: "An active supplier account is required." }); return; } res.json(toSellerDashboardSummary(seller)); });
+  app.post("/api/products/:id/submit", requireCustomer, async (req, res) => { const seller = (req as any).customer as AccountUser; const product = products.find((p) => p._id === req.params.id); if (!isActiveSupplier(seller) || !product || product.sellerId !== seller._id) { res.status(403).json({ message: "You can submit only your own products from an active supplier account." }); return; } if ((product as any).publicationStatus !== "DRAFT" && (product as any).publicationStatus !== "CHANGES_REQUIRED") { res.status(400).json({ message: "Only drafts or change requests can be submitted." }); return; } (product as any).publicationStatus = "SUBMITTED"; (product as any).reviewHistory ||= []; (product as any).reviewHistory.unshift({ status: "SUBMITTED", at: new Date().toISOString(), by: seller._id }); await persistProducts(); res.json(product); });
+  app.patch("/api/admin/products/:id/review", requireAdmin, async (req, res) => { const product = products.find((p) => p._id === req.params.id); if (!product) { res.status(404).json({ message: "Product not found." }); return; } const decision = String(req.body?.decision || ""); const reason = String(req.body?.reason || "").trim().slice(0, 1000); if (!["UNDER_REVIEW", "APPROVED", "CHANGES_REQUIRED", "ACTIVE"].includes(decision) || ((decision === "CHANGES_REQUIRED") && !reason)) { res.status(400).json({ message: "A valid decision and a reason for changes are required." }); return; } const current = (product as any).publicationStatus || "DRAFT"; const allowed: Record<string, string[]> = { SUBMITTED: ["UNDER_REVIEW", "CHANGES_REQUIRED"], UNDER_REVIEW: ["APPROVED", "CHANGES_REQUIRED"], APPROVED: ["ACTIVE"], CHANGES_REQUIRED: [] }; if (!(allowed[current] || []).includes(decision)) { res.status(400).json({ message: `Invalid product transition from ${current}.` }); return; } (product as any).publicationStatus = decision; (product as any).reviewReason = reason || undefined; (product as any).reviewHistory ||= []; (product as any).reviewHistory.unshift({ from: current, status: decision, reason: reason || undefined, at: new Date().toISOString(), by: String((req as any).adminPayload?.email || "admin") }); await persistProducts(); res.json(product); });
+
   // Product ownership starts with the authenticated seller account.
   app.post("/api/products", requireCustomer, async (req, res) => {
     try {
       const customer = (req as express.Request & { customer?: any }).customer;
-      if (customer.role !== "seller" && customer.role !== "admin" && customer.role !== "manager") {
-        res.status(403).json({ message: "Create a seller panel before adding products." });
+      if (!isActiveSupplier(customer)) {
+        res.status(403).json({ message: "Only an active, approved supplier can create products." });
         return;
       }
       const payload = buildProductPayload(req.body || {}) as Product;
@@ -1756,7 +1852,8 @@ export async function startServer() {
       payload.serviceablePincodes = customer.serviceablePincodes || [];
       payload.processingDays = Number(customer.processingDays ?? 1);
       payload.dispatchSlaHours = Number(customer.dispatchSlaHours ?? 24);
-      payload.status = "PENDING_APPROVAL";
+      if (!payload.category || !payload.image || !payload.sizes?.length || !payload.colors?.length || !Number(payload.price) || Number(payload.stock) < 0 || !String((req.body || {}).fabric || "").trim() || !Array.isArray((req.body || {}).variants)) { res.status(400).json({ message: "Category, fabric/material, variants, size chart, price, stock, dispatch lead time and images are required." }); return; }
+      (payload as any).fabric = String((req.body || {}).fabric).trim(); (payload as any).publicationStatus = "DRAFT"; (payload as any).reviewHistory = [];
       products.unshift(payload as Product);
       await persistProducts();
       res.status(201).json(payload);

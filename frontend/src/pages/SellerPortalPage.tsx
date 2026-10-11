@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Store } from 'lucide-react';
 import { apiFetch } from '../config';
@@ -12,6 +12,9 @@ export function SellerPortalPage() {
   const navigate = useNavigate();
   const setAuthSession = useStore((state) => state.setAuthSession);
   const clearAuthSession = useStore((state) => state.clearAuthSession);
+  const currentUser = useStore((state) => state.user);
+  const authToken = useStore((state) => state.authToken);
+  const [dashboard, setDashboard] = useState<{ products: number; orders: number; grossSales: number; pendingApprovals: number } | null>(null);
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [form, setForm] = useState(initialForm);
   const [photo, setPhoto] = useState<File | null>(null);
@@ -19,6 +22,8 @@ export function SellerPortalPage() {
   const [loading, setLoading] = useState(false);
 
   usePageMeta({ title: 'Seller Portal | Trendora', description: 'Create and manage your Trendora seller account.' });
+  useEffect(() => { if (currentUser?.role === 'seller' && authToken) apiFetch<any>('/api/seller/dashboard', { headers: { Authorization: `Bearer ${authToken}` } }).then(setDashboard).catch((e) => setMessage(e.message)); }, [currentUser, authToken]);
+  if (currentUser?.role === 'seller' && dashboard) return <main className="min-h-screen bg-[#fff8fd] p-6"><section className="mx-auto max-w-4xl rounded-3xl bg-white p-7 shadow-xl"><p className="text-xs font-black uppercase tracking-[.2em] text-pink-500">Active supplier</p><h1 className="mt-2 text-3xl font-black text-[#55205f]">Supplier Studio</h1><div className="mt-6 grid gap-3 sm:grid-cols-4">{[["Products", dashboard.products], ["Orders", dashboard.orders], ["Gross sales", `₹${dashboard.grossSales}`], ["In review", dashboard.pendingApprovals]].map(([label,value]) => <div key={String(label)} className="rounded-2xl bg-fuchsia-50 p-4"><p className="text-xs font-bold text-gray-500">{label}</p><p className="mt-1 text-2xl font-black text-[#55205f]">{value}</p></div>)}</div><p className="mt-6 text-sm text-gray-500">Products must be separately submitted and approved by Trendora before customers can view them.</p></section></main>;
   const update = (key: keyof typeof initialForm, value: string | boolean) => setForm((current) => ({ ...current, [key]: value }));
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -52,7 +57,7 @@ export function SellerPortalPage() {
   return <div className="min-h-screen bg-[#fff8fd] px-4 py-10"><main className="mx-auto max-w-lg rounded-3xl border border-pink-100 bg-white p-6 shadow-[0_18px_45px_rgba(139,44,169,0.12)]">
     <div className="flex items-center gap-3"><div className="rounded-2xl bg-gradient-to-br from-[#55205f] to-pink-500 p-3 text-white"><Store size={24} /></div><div><p className="text-xs font-black uppercase tracking-[0.2em] text-pink-500">Trendora Partner</p><h1 className="text-2xl font-black text-[#55205f]">Seller Portal</h1></div></div>
     <p className="mt-4 text-sm text-gray-500">Customer account ke liye <Link to="/profile" className="font-bold text-pink-600">My Profile</Link> use karein.</p>
-    <div className="mt-5 flex rounded-full bg-pink-50 p-1"><button onClick={() => setMode('login')} className={`flex-1 rounded-full py-2 text-sm font-bold ${mode === 'login' ? 'bg-gradient-to-r from-[#55205f] to-fuchsia-700 text-white shadow-sm' : 'text-[#735175]'}`}>Seller login</button><button onClick={() => setMode('register')} className={`flex-1 rounded-full py-2 text-sm font-bold ${mode === 'register' ? 'bg-gradient-to-r from-[#55205f] to-fuchsia-700 text-white shadow-sm' : 'text-[#735175]'}`}>Apply as seller</button></div>
+    <div className="mt-5 flex rounded-full bg-pink-50 p-1"><button onClick={() => setMode('login')} className={`flex-1 rounded-full py-2 text-sm font-bold ${mode === 'login' ? 'bg-gradient-to-r from-[#55205f] to-fuchsia-700 text-white shadow-sm' : 'text-[#735175]'}`}>Seller login</button><button onClick={() => navigate('/supplier-access')} className={`flex-1 rounded-full py-2 text-sm font-bold ${mode === 'register' ? 'bg-gradient-to-r from-[#55205f] to-fuchsia-700 text-white shadow-sm' : 'text-[#735175]'}`}>Apply as seller</button></div>
     <form onSubmit={mode === 'login' ? login : submit} className="mt-5 space-y-3">
       {mode === 'register' && <><input required value={form.name} onChange={(e) => update('name', e.target.value)} placeholder="Full name" className="field" /><input required type="email" value={form.email} onChange={(e) => update('email', e.target.value)} placeholder="Email address" className="field" /><input required minLength={3} value={form.businessName} onChange={(e) => update('businessName', e.target.value)} placeholder="Business / store name" className="field" /><input required minLength={2} value={form.city} onChange={(e) => update('city', e.target.value)} placeholder="City" className="field" /><input required type="tel" value={form.phone} onChange={(e) => update('phone', e.target.value)} placeholder="Phone number" className="field" /><input required value={form.invitationCode} onChange={(e) => update('invitationCode', e.target.value.toUpperCase())} placeholder="Invitation code" className="field uppercase" /><label className="block text-sm font-semibold text-gray-600">Profile photo <span className="font-normal text-gray-400">(optional)</span><input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(e) => setPhoto(e.target.files?.[0] || null)} className="mt-1 block w-full text-sm font-normal" /></label></>}
       <input required value={form.sellerId} onChange={(e) => update('sellerId', e.target.value.toLowerCase())} placeholder="Seller ID" minLength={3} maxLength={32} pattern="[a-zA-Z0-9._-]+" className="field" />

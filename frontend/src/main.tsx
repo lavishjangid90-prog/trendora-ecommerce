@@ -15,6 +15,8 @@ const CheckoutPage = lazy(() => import('./pages/CheckoutPage').then((module) => 
 const AdminPage = lazy(() => import('./pages/AdminPage').then((module) => ({ default: module.AdminPage })));
 const OrderDetailsPage = lazy(() => import('./pages/OrderDetailsPage').then((module) => ({ default: module.OrderDetailsPage })));
 const SellerPortalPage = lazy(() => import('./pages/SellerPortalPage').then((module) => ({ default: module.SellerPortalPage })));
+const SupplierAccessPage = lazy(() => import('./pages/SupplierAccessPage').then((module) => ({ default: module.SupplierAccessPage })));
+const SupplierActivationPage = lazy(() => import('./pages/SupplierActivationPage').then((module) => ({ default: module.SupplierActivationPage })));
 const AIStylistPage = lazy(() => import('./pages/AIStylistPage').then((module) => ({ default: module.AIStylistPage })));
 
 createRoot(document.getElementById('root')!).render(
@@ -30,6 +32,8 @@ createRoot(document.getElementById('root')!).render(
             <Route path="orders/:id" element={<OrderDetailsPage />} />
             <Route path="profile" element={<ProfilePage />} />
             <Route path="seller" element={<SellerPortalPage />} />
+            <Route path="supplier-access" element={<SupplierAccessPage />} />
+            <Route path="supplier/activate" element={<SupplierActivationPage />} />
             <Route path="ai-fashion" element={<AIStylistPage />} />
             <Route path="wishlist" element={<WishlistPage />} />
             <Route path="search" element={<SearchPage />} />

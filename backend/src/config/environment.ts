@@ -23,6 +23,7 @@ export const environment = {
   geminiApiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "",
   mongoUri: process.env.MONGODB_URI || "",
   sellerOnboardingMode: (process.env.SELLER_ONBOARDING_MODE || "INVITATION_ONLY").toUpperCase(),
+  appUrl: (process.env.APP_URL || process.env.FRONTEND_URL || "").replace(/\/$/, ""),
   allowedSites: process.env.ALLOWED_SITES
     ? process.env.ALLOWED_SITES.split(',').map(s => s.trim()).filter(Boolean)
     : [],
@@ -48,6 +49,7 @@ export const dataFiles = {
   banners: path.join(paths.dataDir, "banners.json"),
   notifications: path.join(paths.dataDir, "notifications.json"),
   sellerInvitations: path.join(paths.dataDir, "seller-invitations.json"),
+  supplierApplications: path.join(paths.dataDir, "supplier-applications.json"),
   revenueLedger: path.join(paths.dataDir, "revenue-ledger.json"),
   sellerCampaigns: path.join(paths.dataDir, "seller-campaigns.json"),
   aiAnalytics: path.join(paths.dataDir, "ai-analytics.json"),

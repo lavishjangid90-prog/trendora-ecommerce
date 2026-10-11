@@ -99,6 +99,8 @@ type AdminNotification = {
   createdAt: string;
 };
 
+type SupplierApplication = { _id: string; reference: string; businessName: string; applicantName: string; supplierType: string; city: string; state: string; email: string; categories: string[]; status: string; documentsVerified?: boolean; sourcingVerified?: boolean; notes: { text: string; at: string; kind: string }[]; history: { to: string; at: string; reason?: string }[]; };
+
 type Dashboard = {
   metrics: {
     revenue: number;
@@ -182,6 +184,7 @@ const tabs = [
   { id: 'products', label: 'Products', icon: Boxes },
   { id: 'orders', label: 'Orders', icon: PackageCheck },
   { id: 'users', label: 'Users', icon: Users },
+  { id: 'suppliers', label: 'Supplier Applications', icon: ShieldCheck },
   { id: 'coupons', label: 'Coupons', icon: TicketPercent },
   { id: 'banners', label: 'Banners', icon: Image },
   { id: 'notifications', label: 'Notifications', icon: Bell },
@@ -201,6 +204,8 @@ export function AdminPage() {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [banners, setBanners] = useState<Banner[]>([]);
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
+  const [supplierApplications, setSupplierApplications] = useState<SupplierApplication[]>([]);
+  const [supplierFilter, setSupplierFilter] = useState("");
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [productForm, setProductForm] = useState(productFormDefault);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
@@ -267,18 +272,21 @@ export function AdminPage() {
       setNotifications(notificationData.notifications);
 
       if (currentUser?.role !== 'seller') {
-        const [userData, couponData, bannerData] = await Promise.all([
+        const [userData, couponData, bannerData, applicationData] = await Promise.all([
           adminFetch<AdminUser[]>('/api/admin/users'),
           adminFetch<Coupon[]>('/api/admin/coupons'),
           adminFetch<Banner[]>('/api/admin/banners'),
+          adminFetch<SupplierApplication[]>('/api/admin/supplier-applications'),
         ]);
         setUsers(userData);
         setCoupons(couponData);
         setBanners(bannerData);
+        setSupplierApplications(applicationData);
       } else {
         setUsers([]);
         setCoupons([]);
         setBanners([]);
+        setSupplierApplications([]);
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Admin data load nahi ho paya.');
@@ -314,6 +322,15 @@ export function AdminPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const reviewSupplier = async (application: SupplierApplication, status: string) => {
+    const reason = status === 'REJECTED' || status === 'MORE_INFORMATION_REQUIRED' ? window.prompt('Reason (required):') : '';
+    if ((status === 'REJECTED' || status === 'MORE_INFORMATION_REQUIRED') && !reason) return;
+    try { const updated = await adminFetch<{ application: SupplierApplication }>('/api/admin/supplier-applications/' + application._id, { method: 'PATCH', body: JSON.stringify({ status, reason, documentsVerified: application.documentsVerified, sourcingVerified: application.sourcingVerified, approvedCategories: application.categories }) }); setSupplierApplications(items => items.map(item => item._id === application._id ? updated.application : item)); setMessage('Supplier application updated.'); } catch (error) { setMessage(error instanceof Error ? error.message : 'Update failed.'); }
+  };
+  const updateSupplierVerification = async (application: SupplierApplication, key: 'documentsVerified' | 'sourcingVerified') => {
+    try { const updated = await adminFetch<{ application: SupplierApplication }>('/api/admin/supplier-applications/' + application._id, { method: 'PATCH', body: JSON.stringify({ [key]: !application[key] }) }); setSupplierApplications(items => items.map(item => item._id === application._id ? updated.application : item)); } catch (error) { setMessage(error instanceof Error ? error.message : 'Update failed.'); }
   };
 
   const logout = () => {
@@ -882,6 +899,13 @@ export function AdminPage() {
                   </div>
                 ))}
               </div>
+            </AdminPanel>
+          )}
+
+          {activeTab === 'suppliers' && (
+            <AdminPanel title="Supplier Applications" icon={ShieldCheck}>
+              <input className="field mb-4" value={supplierFilter} onChange={(e) => setSupplierFilter(e.target.value)} placeholder="Search business, email, city or reference" />
+              <div className="space-y-3">{supplierApplications.filter(a => !supplierFilter || [a.reference,a.businessName,a.email,a.city,a.status].join(' ').toLowerCase().includes(supplierFilter.toLowerCase())).map((application) => <div key={application._id} className="rounded-2xl border border-gray-100 p-4"><div className="flex flex-wrap justify-between gap-3"><div><p className="font-black">{application.businessName} <span className="text-xs text-gray-400">{application.reference}</span></p><p className="text-sm text-gray-500">{application.supplierType} · {application.city}, {application.state} · {application.email}</p><p className="mt-1 text-xs font-bold text-fuchsia-700">{application.status.replaceAll('_', ' ')}</p></div><div className="flex flex-wrap gap-2"><button onClick={() => reviewSupplier(application, 'CONTACTED')} className="rounded-full bg-gray-100 px-3 py-2 text-xs font-bold">Contacted</button><button onClick={() => reviewSupplier(application, 'UNDER_VERIFICATION')} className="rounded-full bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">Verify</button><button onClick={() => reviewSupplier(application, 'REJECTED')} className="rounded-full bg-red-50 px-3 py-2 text-xs font-bold text-red-700">Reject</button>{application.status === 'UNDER_VERIFICATION' && <button disabled={!application.documentsVerified || !application.sourcingVerified} onClick={() => reviewSupplier(application, 'APPROVED_PENDING_ACTIVATION')} className="rounded-full bg-green-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Approve</button>}</div></div><div className="mt-3 flex flex-wrap gap-3 text-xs"><label><input type="checkbox" checked={!!application.documentsVerified} onChange={() => updateSupplierVerification(application, 'documentsVerified')} /> Documents verified</label><label><input type="checkbox" checked={!!application.sourcingVerified} onChange={() => updateSupplierVerification(application, 'sourcingVerified')} /> Sourcing verified</label><span>Categories: {application.categories.join(', ')}</span></div>{application.notes.length > 0 && <p className="mt-2 text-xs text-gray-500">Latest note: {application.notes[0].text}</p>}</div>)}{!supplierApplications.length && <EmptyState text="No supplier applications yet." />}</div>
             </AdminPanel>
           )}
 

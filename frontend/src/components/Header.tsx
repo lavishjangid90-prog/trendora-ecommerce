@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Heart, LayoutGrid, LogOut, Menu, Search, ShoppingBag, User, X } from 'lucide-react';
+import { Home, Heart, LayoutGrid, LogOut, Menu, Search, ShoppingBag, User, X, ShieldCheck } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { assetUrl } from '../config';
 import { cn } from '../lib/utils';
@@ -51,6 +51,7 @@ export function Header() {
     { icon: ShoppingBag, label: 'Cart', path: '/cart', showBadge: true },
     { icon: User, label: 'Profile', path: '/profile' },
     { icon: ShoppingBag, label: 'Seller Portal', path: '/seller' },
+    { icon: ShieldCheck, label: 'Request Seller Access', path: '/supplier-access' },
   ];
 
   return (

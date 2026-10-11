@@ -15,7 +15,7 @@ export function createProductController<TProduct extends ProductLike, TBanner ex
   options?: { getConfig: () => LocalCommerceConfig },
 ) {
   const list: RequestHandler = (req, res) => {
-    const filtered = filterProducts(products, req.query.category, req.query.search);
+    const filtered = filterProducts(products, req.query.category, req.query.search).filter((product: any) => !product.publicationStatus || product.publicationStatus === "ACTIVE");
     const now = Date.now();
     const customer: DeliveryLocation = { pincode: String(req.query.pincode || ""), city: String(req.query.city || ""), state: String(req.query.state || "") };
     const localFilter = String(req.query.local || "");
@@ -46,7 +46,7 @@ export function createProductController<TProduct extends ProductLike, TBanner ex
 
   const getById: RequestHandler = (req, res) => {
     const product = findProduct(products, req.params.id);
-    if (product) {
+    if (product && (!(product as any).publicationStatus || (product as any).publicationStatus === "ACTIVE")) {
       const customer: DeliveryLocation = { pincode: String(req.query.pincode || ""), city: String(req.query.city || ""), state: String(req.query.state || "") };
       const hasLocation = Boolean(customer.pincode || customer.city || customer.state);
       const delivery = hasLocation ? estimateDelivery(product, customer) : undefined;
