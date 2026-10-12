@@ -42,7 +42,7 @@ export type LocalCommerceConfig = {
 
 export const defaultLocalCommerceConfig: LocalCommerceConfig = {
   ranking: { samePincode: 100, sameCity: 70, nearbyRegion: 45, sameState: 25, otherState: 5, delivery: 18, quality: 36, relevance: 20 },
-  shipping: { freeShippingThreshold: 999, fixedFee: 99, localDeliveryFee: 49, customerContribution: 1, sellerContribution: 0, returnPolicies: { "wrong product": "seller", defective: "seller", damaged: "logistics", "changed mind": "customer", "size too small": "customer", "size too large": "customer" } },
+  shipping: { freeShippingThreshold: 999, fixedFee: 99, localDeliveryFee: 49, customerContribution: 0.5, sellerContribution: 0.5, returnPolicies: { "wrong product": "seller", defective: "seller", damaged: "logistics", "changed mind": "customer", "size too small": "customer", "size too large": "customer" } },
   ai: { freeUsageLimit: 5, premiumUsageLimit: 50, premiumPrice: 199 },
   dealBoxes: [
     { id: "mega-deals", title: "Mega Deals", subtitle: "High value steals", price: 299, pricePerDay: 49, defaultDays: 7, accent: "from-pink-500 via-fuchsia-500 to-violet-500" },
@@ -95,9 +95,20 @@ export function rankProduct(product: FulfillmentProduct, customer: DeliveryLocat
 
 export function calculateShipping(itemsTotal: number, products: FulfillmentProduct[], customer: DeliveryLocation, config: LocalCommerceConfig) {
   if (itemsTotal >= config.shipping.freeShippingThreshold) return { customerShipping: 0, sellerShipping: 0, logisticsEstimate: 0, shippingMargin: 0 };
+
   const local = products.length > 0 && products.every((product) => estimateDelivery(product, customer).isLocal);
-  const logisticsEstimate = local ? config.shipping.localDeliveryFee : config.shipping.fixedFee;
+  if (local) return { customerShipping: 0, sellerShipping: 0, logisticsEstimate: 0, shippingMargin: 0 };
+
+  const logisticsEstimate = config.shipping.fixedFee;
   const customerShipping = Math.round(logisticsEstimate * config.shipping.customerContribution);
   const sellerShipping = Math.round(logisticsEstimate * config.shipping.sellerContribution);
-  return { customerShipping, sellerShipping, logisticsEstimate, shippingMargin: customerShipping + sellerShipping - logisticsEstimate };
+  const adjustedCustomer = Math.min(customerShipping, logisticsEstimate);
+  const adjustedSeller = Math.min(sellerShipping, Math.max(0, logisticsEstimate - adjustedCustomer));
+
+  return {
+    customerShipping: adjustedCustomer,
+    sellerShipping: adjustedSeller,
+    logisticsEstimate,
+    shippingMargin: adjustedCustomer + adjustedSeller - logisticsEstimate,
+  };
 }
