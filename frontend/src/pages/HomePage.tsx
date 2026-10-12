@@ -198,6 +198,37 @@ export function HomePage() {
       </div>
 
       <div className="px-3 py-4 sm:px-4">
+        <div className="rounded-2xl border border-pink-100 bg-gradient-to-br from-pink-50 to-fuchsia-50 p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-pink-500">Admin catalog</p>
+              <h3 className="mt-1 text-xl font-black tracking-tight text-[#55205f]">Trendora Products</h3>
+            </div>
+            <button onClick={() => navigate('/categories?category=All')} className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-[#55205f] shadow-sm">View all</button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+            {products.slice(0, 5).map((product) => (
+              <button key={product._id} onClick={() => navigate(`/product/${product._id}`)} className="group overflow-hidden rounded-xl border border-white bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+                <div className="relative aspect-[4/5] overflow-hidden">
+                  <img src={assetUrl(product.image)} alt={product.name} className="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
+                  {product.discount > 0 && (
+                    <span className="absolute left-2 top-2 rounded-full bg-gradient-to-r from-fuchsia-700 to-pink-500 px-2 py-1 text-[10px] font-black text-white">
+                      {product.discount}% OFF
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1 p-2">
+                  <p className="line-clamp-2 text-xs font-bold text-[#55205f]">{product.name}</p>
+                  <p className="text-xs font-black text-pink-600">₹{product.price}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="px-3 py-4 sm:px-4">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-xl font-black tracking-tight text-[#55205f]">Deal boxes</h3>
           <span className="text-xs font-bold uppercase tracking-[0.2em] text-pink-500">Seller funded</span>
