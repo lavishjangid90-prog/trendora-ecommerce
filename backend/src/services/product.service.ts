@@ -34,11 +34,12 @@ export type ProductLike = {
 export type BannerLike = { active: boolean };
 
 export function filterProducts<T extends ProductLike>(products: T[], categoryInput: unknown, searchInput: unknown) {
-  const category = String(categoryInput || "").toLowerCase();
+  const category = String(categoryInput || "").trim().toLowerCase();
+  const normalizedCategory = category === "all" ? "" : category;
   const search = String(searchInput || "").toLowerCase();
 
   return products.filter((product) => {
-    const matchesCategory = !category || product.category.toLowerCase().includes(category);
+    const matchesCategory = !normalizedCategory || product.category.toLowerCase().includes(normalizedCategory);
     const matchesSearch =
       !search ||
       [

@@ -5,11 +5,11 @@ import { Product } from '../types';
 import { usePageMeta } from '../lib/usePageMeta';
 import { apiFetch } from '../config';
 
-const CATEGORIES = ['Streetwear', 'T-Shirts', 'Sneakers', 'Jackets', 'Accessories', "Women's Fashion"];
+const CATEGORIES = ['All', 'Streetwear', 'T-Shirts', 'Sneakers', 'Jackets', 'Accessories', "Women's Fashion"];
 
 export function CategoriesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const selectedCategory = searchParams.get('category') || CATEGORIES[0];
+  const selectedCategory = searchParams.get('category') || 'All';
   const [products, setProducts] = useState<Product[]>([]);
 
   usePageMeta({
