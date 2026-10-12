@@ -27,6 +27,8 @@ export interface Product {
   promoted?: boolean;
   promotedUntil?: string;
   promotionBid?: number;
+  promotionPlacement?: string;
+  promotionDays?: number;
   ownerType?: 'SELLER' | 'TRENDORA';
   sellerCity?: string;
   sellerState?: string;

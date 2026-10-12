@@ -23,16 +23,33 @@ export type FulfillmentProduct = {
   sponsored?: boolean;
 };
 
+export type DealPlacementConfig = {
+  id: string;
+  title: string;
+  subtitle: string;
+  price: number;
+  pricePerDay: number;
+  defaultDays: number;
+  accent: string;
+};
+
 export type LocalCommerceConfig = {
   ranking: { samePincode: number; sameCity: number; nearbyRegion: number; sameState: number; otherState: number; delivery: number; quality: number; relevance: number };
   shipping: { freeShippingThreshold: number; fixedFee: number; localDeliveryFee: number; customerContribution: number; sellerContribution: number; returnPolicies: Record<string, "customer" | "seller" | "logistics"> };
   ai: { freeUsageLimit: number; premiumUsageLimit: number; premiumPrice: number };
+  dealBoxes: DealPlacementConfig[];
 };
 
 export const defaultLocalCommerceConfig: LocalCommerceConfig = {
   ranking: { samePincode: 100, sameCity: 70, nearbyRegion: 45, sameState: 25, otherState: 5, delivery: 18, quality: 36, relevance: 20 },
   shipping: { freeShippingThreshold: 999, fixedFee: 99, localDeliveryFee: 49, customerContribution: 1, sellerContribution: 0, returnPolicies: { "wrong product": "seller", defective: "seller", damaged: "logistics", "changed mind": "customer", "size too small": "customer", "size too large": "customer" } },
   ai: { freeUsageLimit: 5, premiumUsageLimit: 50, premiumPrice: 199 },
+  dealBoxes: [
+    { id: "mega-deals", title: "Mega Deals", subtitle: "High value steals", price: 299, pricePerDay: 49, defaultDays: 7, accent: "from-pink-500 via-fuchsia-500 to-violet-500" },
+    { id: "today-deals", title: "Today Deals", subtitle: "Daily limited offers", price: 199, pricePerDay: 35, defaultDays: 5, accent: "from-orange-500 via-rose-500 to-pink-500" },
+    { id: "flash-sale", title: "Flash Sale", subtitle: "Urgency-driven picks", price: 249, pricePerDay: 40, defaultDays: 4, accent: "from-violet-500 via-indigo-500 to-sky-500" },
+    { id: "best-price", title: "Best Price", subtitle: "Budget-friendly value", price: 179, pricePerDay: 30, defaultDays: 3, accent: "from-emerald-500 via-teal-500 to-cyan-500" },
+  ],
 };
 
 const normal = (value?: string) => String(value || "").trim().toLowerCase();

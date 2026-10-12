@@ -82,8 +82,6 @@ export function createAuthService(options: AuthOptions) {
 
   // helper to create a seller account (keeps register() behaviour unchanged)
   async function registerSeller(input: Record<string, unknown>) {
-    return { status: 403, body: { message: "Public seller registration is disabled. Submit a supplier access request and activate only after company approval." } };
-    /* Legacy code retained below for migration compatibility. */
     const name = String(input.name || "").trim();
     const email = String(input.email || "").trim().toLowerCase();
     const sellerId = String(input.sellerId || "").trim().toLowerCase();

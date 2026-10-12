@@ -61,6 +61,13 @@ const CATEGORIES = [
   },
 ];
 
+const defaultDealBoxes = [
+  { id: 'mega-deals', title: 'Mega Deals', subtitle: 'High value steals', accent: 'from-pink-500 via-fuchsia-500 to-violet-500' },
+  { id: 'today-deals', title: 'Today Deals', subtitle: 'Daily limited offers', accent: 'from-orange-500 via-rose-500 to-pink-500' },
+  { id: 'flash-sale', title: 'Flash Sale', subtitle: 'Urgency-driven picks', accent: 'from-violet-500 via-indigo-500 to-sky-500' },
+  { id: 'best-price', title: 'Best Price', subtitle: 'Budget-friendly value', accent: 'from-emerald-500 via-teal-500 to-cyan-500' },
+];
+
 const quickTiles = [
   { title: 'Mega Deals', subtitle: 'Up to 70% off', icon: Tag },
   { title: 'Flash Sale', subtitle: 'Limited Time', icon: Zap },
@@ -79,6 +86,7 @@ export function HomePage() {
   const navigate = useNavigate();
   const [products, setProducts] = useState<Product[]>([]);
   const [banners, setBanners] = useState<HomeBanner[]>([]);
+  const [dealBoxes, setDealBoxes] = useState(defaultDealBoxes);
   const [loading, setLoading] = useState(true);
 
   usePageMeta({
@@ -91,10 +99,12 @@ export function HomePage() {
     Promise.all([
       apiFetch<Product[]>(`/api/products?${delivery}`),
       apiFetch<HomeBanner[]>('/api/banners').catch(() => []),
+      apiFetch<{ dealBoxes?: typeof defaultDealBoxes }>('/api/fulfillment/config').catch(() => ({ dealBoxes: defaultDealBoxes })),
     ])
-      .then(([productData, bannerData]) => {
+      .then(([productData, bannerData, configData]) => {
         setProducts(productData);
         setBanners(bannerData);
+        setDealBoxes(Array.isArray(configData?.dealBoxes) && configData.dealBoxes.length ? configData.dealBoxes : defaultDealBoxes);
         setLoading(false);
       })
       .catch((err) => {
@@ -185,6 +195,40 @@ export function HomePage() {
             </span>
           </button>
         ))}
+      </div>
+
+      <div className="px-3 py-4 sm:px-4">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-xl font-black tracking-tight text-[#55205f]">Deal boxes</h3>
+          <span className="text-xs font-bold uppercase tracking-[0.2em] text-pink-500">Seller funded</span>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {dealBoxes.map((box) => {
+            const boxProducts = products.filter((product) => product.promoted && product.promotionPlacement === box.id && product.promotedUntil && new Date(product.promotedUntil).getTime() > Date.now()).slice(0, 3);
+            return (
+              <div key={box.id} className="rounded-2xl border border-pink-100 bg-white p-3 shadow-sm">
+                <div className={`rounded-xl bg-gradient-to-r ${box.accent} p-3 text-white`}>
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-white/80">Featured</p>
+                  <h4 className="mt-2 text-xl font-black">{box.title}</h4>
+                  <p className="mt-1 text-xs font-semibold text-white/80">{box.subtitle}</p>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {boxProducts.length ? boxProducts.map((product) => (
+                    <button key={product._id} onClick={() => navigate(`/product/${product._id}`)} className="flex w-full items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 p-2 text-left hover:border-pink-200">
+                      <img src={assetUrl(product.image)} alt={product.name} className="h-12 w-12 rounded-lg object-cover" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-bold text-gray-900">{product.name}</span>
+                        <span className="mt-1 block text-xs font-semibold text-pink-600">₹{product.price}</span>
+                      </span>
+                    </button>
+                  )) : (
+                    <div className="rounded-xl border border-dashed border-pink-200 bg-pink-50 p-3 text-xs font-semibold text-pink-600">Seller product add karne ke liye panel se promote karein.</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div className="px-3 py-3 sm:px-4">

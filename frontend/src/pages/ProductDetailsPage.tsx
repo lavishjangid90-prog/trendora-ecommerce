@@ -225,15 +225,15 @@ export function ProductDetailsPage() {
               </button>
               <PromoteModal
                 open={showPromoteModal}
-                initialAmount={100}
+                initialAmount={299}
                 initialDays={7}
                 onClose={() => setShowPromoteModal(false)}
-                onSubmit={async (amount, days) => {
+                onSubmit={async (amount, days, placement) => {
                   try {
                     const res = await apiFetch<any>(`/api/products/${product._id}/promote`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
-                      body: JSON.stringify({ amount, days }),
+                      body: JSON.stringify({ amount, days, placement }),
                     });
 
                     if (res.keyId && res.orderId) {

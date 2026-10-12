@@ -22,7 +22,7 @@ export const environment = {
   jwtSecret: process.env.JWT_SECRET || "trendora-local-admin-secret",
   geminiApiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "",
   mongoUri: process.env.MONGODB_URI || "",
-  sellerOnboardingMode: (process.env.SELLER_ONBOARDING_MODE || "INVITATION_ONLY").toUpperCase(),
+  sellerOnboardingMode: (process.env.SELLER_ONBOARDING_MODE || "OPEN_REGISTRATION").toUpperCase(),
   appUrl: (process.env.APP_URL || process.env.FRONTEND_URL || "").replace(/\/$/, ""),
   allowedSites: process.env.ALLOWED_SITES
     ? process.env.ALLOWED_SITES.split(',').map(s => s.trim()).filter(Boolean)

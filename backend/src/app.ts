@@ -152,6 +152,8 @@ type Product = (typeof MOCK_PRODUCTS)[number] & {
   promoted?: boolean;
   promotedUntil?: string;
   promotionBid?: number;
+  promotionPlacement?: string;
+  promotionDays?: number;
   ownerType?: "SELLER" | "TRENDORA";
   sellerCity?: string;
   sellerState?: string;
@@ -971,6 +973,7 @@ export async function startServer() {
     ranking: { ...defaultLocalCommerceConfig.ranking, ...(savedLocalCommerceConfig.ranking || {}) },
     shipping: { ...defaultLocalCommerceConfig.shipping, ...(savedLocalCommerceConfig.shipping || {}), returnPolicies: { ...defaultLocalCommerceConfig.shipping.returnPolicies, ...(savedLocalCommerceConfig.shipping?.returnPolicies || {}) } },
     ai: { ...defaultLocalCommerceConfig.ai, ...(savedLocalCommerceConfig.ai || {}) },
+    dealBoxes: Array.isArray(savedLocalCommerceConfig.dealBoxes) && savedLocalCommerceConfig.dealBoxes.length ? savedLocalCommerceConfig.dealBoxes : structuredClone(defaultLocalCommerceConfig.dealBoxes),
   };
   products.splice(0, products.length, ...MOCK_PRODUCTS, ...savedProducts);
   products.forEach((product) => {
@@ -1046,6 +1049,7 @@ export async function startServer() {
       sellerId?: string;
       amount: number;
       days: number;
+      placement?: string;
       razorpayOrderId?: string;
       status: "created" | "paid" | "failed";
     };
@@ -1118,7 +1122,7 @@ export async function startServer() {
   app.use("/api", createProductRouter(createProductController(products, banners, { getConfig: () => localCommerceConfig })));
   app.use("/api", createAuthRouter(authController, requireCustomer, requireAdmin));
 
-  app.get("/api/fulfillment/config", (_req, res) => res.json({ shipping: localCommerceConfig.shipping, ai: localCommerceConfig.ai }));
+  app.get("/api/fulfillment/config", (_req, res) => res.json({ shipping: localCommerceConfig.shipping, ai: localCommerceConfig.ai, dealBoxes: localCommerceConfig.dealBoxes }));
   app.post("/api/fulfillment/quote", (req, res) => {
     const address = req.body?.address || {};
     const items = Array.isArray(req.body?.items) ? req.body.items : [];
@@ -1752,9 +1756,13 @@ export async function startServer() {
     for (const record of returns) { const order = orders.find((item) => item._id === record.orderId); const city = String(order?.address?.city || "Unspecified"); if (byCity[city]) byCity[city].returns += 1; }
     res.json({ config: localCommerceConfig, cities: Object.entries(byCity).map(([city, metrics]) => ({ city, ...metrics, returnRate: metrics.localOrders + metrics.crossCityOrders ? metrics.returns / (metrics.localOrders + metrics.crossCityOrders) : 0 })), returnsByReason: returns.reduce<Record<string, number>>((result, record) => ({ ...result, [record.reason]: (result[record.reason] || 0) + 1 }), {}) });
   });
+  app.get("/api/admin/local-commerce/config", requireAdmin, (_req, res) => {
+    res.json(localCommerceConfig);
+  });
+
   app.put("/api/admin/local-commerce/config", requireAdmin, async (req, res) => {
     if (authService.getRequestUser(req as any)?.role === "seller") { res.status(403).json({ message: "Seller panels cannot change platform configuration." }); return; }
-    const body = req.body || {}; localCommerceConfig = { ...localCommerceConfig, ...(body || {}), ranking: { ...localCommerceConfig.ranking, ...(body.ranking || {}) }, shipping: { ...localCommerceConfig.shipping, ...(body.shipping || {}), returnPolicies: { ...localCommerceConfig.shipping.returnPolicies, ...(body.shipping?.returnPolicies || {}) } }, ai: { ...localCommerceConfig.ai, ...(body.ai || {}) } };
+    const body = req.body || {}; localCommerceConfig = { ...localCommerceConfig, ...(body || {}), ranking: { ...localCommerceConfig.ranking, ...(body.ranking || {}) }, shipping: { ...localCommerceConfig.shipping, ...(body.shipping || {}), returnPolicies: { ...localCommerceConfig.shipping.returnPolicies, ...(body.shipping?.returnPolicies || {}) } }, ai: { ...localCommerceConfig.ai, ...(body.ai || {}) }, dealBoxes: Array.isArray(body.dealBoxes) && body.dealBoxes.length ? body.dealBoxes : localCommerceConfig.dealBoxes };
     await persistLocalCommerce(); res.json(localCommerceConfig);
   });
 
@@ -1874,22 +1882,25 @@ export async function startServer() {
       res.status(403).json({ message: "Only the product owner can promote this product." });
       return;
     }
-    const amount = Number(req.body.amount || 0);
-    if (amount <= 0) {
-      res.status(400).json({ message: "Promotion amount must be greater than zero." });
+    const placement = String(req.body.placement || "mega-deals");
+    const dealBox = localCommerceConfig.dealBoxes.find((box) => box.id === placement) || localCommerceConfig.dealBoxes[0];
+    const amount = Number(req.body.amount || dealBox?.price || 0);
+    if (!dealBox || amount < dealBox.price) {
+      res.status(400).json({ message: `Minimum promotion amount for ${dealBox?.title || "this placement"} is ₹${dealBox?.price || 0}.` });
       return;
     }
-    const days = Math.max(1, Math.min(30, Number(req.body.days || 7)));
+    const days = Math.max(1, Math.min(30, Number(req.body.days || dealBox.defaultDays || 7)));
 
-    // If Razorpay configured, create an order and return client info for checkout
+    const normalizedAmount = Math.max(amount, dealBox.price);
+
     if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
       try {
         const razorpay = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
-        const razorAmount = Math.round(amount * 100);
+        const razorAmount = Math.round(normalizedAmount * 100);
         const order = await razorpay.orders.create({ amount: razorAmount, currency: "INR", receipt: `promo_${Date.now()}` });
         const promoId = `pr_${Date.now()}${Math.floor(Math.random() * 1000)}`;
-        promotions.unshift({ id: promoId, productId: product._id, sellerId: customer._id, amount, days, razorpayOrderId: order.id, status: "created" });
-        res.json({ promoId, orderId: order.id, keyId: process.env.RAZORPAY_KEY_ID, amount: razorAmount, currency: order.currency });
+        promotions.unshift({ id: promoId, productId: product._id, sellerId: customer._id, amount: normalizedAmount, days, placement: dealBox.id, razorpayOrderId: order.id, status: "created" });
+        res.json({ promoId, orderId: order.id, keyId: process.env.RAZORPAY_KEY_ID, amount: razorAmount, currency: order.currency, placement: dealBox.id });
         return;
       } catch (err) {
         console.error("Razorpay create promo order error:", err);
@@ -1898,12 +1909,13 @@ export async function startServer() {
       }
     }
 
-    // Fallback: mark promoted immediately (mock/local)
     product.promoted = true;
-    product.promotionBid = amount;
+    product.promotionBid = normalizedAmount;
+    product.promotionPlacement = dealBox.id;
+    product.promotionDays = days;
     product.promotedUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
     await persistProducts().catch((err) => console.error("persistProducts error:", err));
-    res.json(product);
+    res.json({ ...product, placement: dealBox.id });
   });
 
   // Verify promotion payment and activate promotion
@@ -1934,12 +1946,15 @@ export async function startServer() {
       res.status(404).json({ message: "Product not found for promotion." });
       return;
     }
+    const dealBox = localCommerceConfig.dealBoxes.find((box) => box.id === (promo.placement || req.body.placement || product.promotionPlacement || "mega-deals")) || localCommerceConfig.dealBoxes[0];
     promo.status = "paid";
     product.promoted = true;
     product.promotionBid = promo.amount;
+    product.promotionPlacement = dealBox.id;
+    product.promotionDays = promo.days;
     product.promotedUntil = new Date(Date.now() + promo.days * 24 * 60 * 60 * 1000).toISOString();
     await persistProducts();
-    res.json({ success: true, product });
+    res.json({ success: true, product, placement: dealBox.id });
   });
 
   app.get("/api/admin/notifications", requireAdmin, (_req, res) => {
